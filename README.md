@@ -103,6 +103,8 @@ jellyfin-whatsapp-notifier/
 | `/api/redirects` | GET | List all redirect entries |
 | `/api/queue` | GET | View message queue status |
 | `/api/queue/pending` | GET | View pending messages |
+| `/api/alerts/status` | GET | View configured alert channels |
+| `/api/alerts/test` | POST | Send test alert to all channels |
 | `/r/:id` | GET | Redirect to Jellyfin content |
 | `/health` | GET | Health check |
 

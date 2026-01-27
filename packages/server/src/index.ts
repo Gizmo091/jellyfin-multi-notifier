@@ -6,8 +6,10 @@ import { whatsappRoutes } from './routes/whatsapp.js'
 import { aggregationRoutes } from './routes/aggregation.js'
 import { redirectRoutes } from './routes/redirect.js'
 import { queueRoutes } from './routes/queue.js'
+import { alertRoutes } from './routes/alert.js'
 import { notificationService } from './services/notification/index.js'
 import { retryService } from './services/retry/index.js'
+import { alertService } from './services/alert/index.js'
 
 const fastify = Fastify({
   logger: {
@@ -53,11 +55,17 @@ await fastify.register(redirectRoutes)
 // Register queue routes
 await fastify.register(queueRoutes)
 
+// Register alert routes
+await fastify.register(alertRoutes)
+
 // Initialize notification service (wires aggregation events to WhatsApp)
 notificationService.initialize()
 
 // Initialize retry service (handles queue processing and automatic retries)
 retryService.initialize()
+
+// Initialize alert service (sends notifications on WhatsApp disconnect)
+alertService.initialize()
 
 // Start server
 const start = async () => {
