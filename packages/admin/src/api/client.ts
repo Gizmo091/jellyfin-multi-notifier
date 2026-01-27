@@ -98,6 +98,36 @@ export interface AlertTestResult {
   error?: string
 }
 
+export interface NotificationRecord {
+  timestamp: string
+  type: 'movies' | 'series'
+  count: number
+  success: boolean
+}
+
+export interface ServiceStatus {
+  uptime: {
+    seconds: number
+    formatted: string
+  }
+  startTime: string
+  whatsapp: {
+    connected: boolean
+    phoneNumber?: string
+  }
+  queue: {
+    pending: number
+    failed: number
+    total: number
+  }
+  aggregation: {
+    moviesCount: number
+    seriesCount: number
+  }
+  lastNotification: NotificationRecord | null
+  recentNotifications: NotificationRecord[]
+}
+
 export const apiClient = {
   async getHealth(): Promise<ApiResponse<{ status: string }>> {
     try {
@@ -152,5 +182,9 @@ export const apiClient = {
 
   async getConfig(): Promise<ApiResponse<ConfigStatus>> {
     return request<ConfigStatus>('/config')
+  },
+
+  async getStatus(): Promise<ApiResponse<ServiceStatus>> {
+    return request<ServiceStatus>('/status')
   },
 }

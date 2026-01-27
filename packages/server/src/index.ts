@@ -9,6 +9,7 @@ import { redirectRoutes } from './routes/redirect.js'
 import { queueRoutes } from './routes/queue.js'
 import { alertRoutes } from './routes/alert.js'
 import { configRoutes } from './routes/config.js'
+import { statusRoutes } from './routes/status.js'
 import { authRoutes, authHook } from './routes/auth.js'
 import { notificationService } from './services/notification/index.js'
 import { retryService } from './services/retry/index.js'
@@ -73,6 +74,9 @@ await fastify.register(alertRoutes)
 
 // Register config routes
 await fastify.register(configRoutes)
+
+// Register status routes
+await fastify.register(statusRoutes)
 
 // Initialize notification service (wires aggregation events to WhatsApp)
 notificationService.initialize()

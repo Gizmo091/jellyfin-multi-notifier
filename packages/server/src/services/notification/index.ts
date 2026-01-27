@@ -4,6 +4,7 @@ import { whatsappClient } from '../whatsapp/client.js'
 import { aggregationService } from '../aggregation/index.js'
 import { queueService } from '../queue/index.js'
 import { retryService } from '../retry/index.js'
+import { statusService } from '../status/index.js'
 
 /**
  * Notification service for formatting and sending WhatsApp messages.
@@ -58,7 +59,7 @@ class NotificationService {
     const message = this.formatMoviesMessage(items)
     const coverUrl = items.find((i) => i.coverUrl)?.coverUrl
 
-    return this.sendOrQueue(message, 'movie', coverUrl)
+    return this.sendOrQueue(message, 'movie', coverUrl, items.length)
   }
 
   /**
@@ -79,17 +80,21 @@ class NotificationService {
     const message = this.formatSeriesMessage(items)
     const coverUrl = items.find((i) => i.coverUrl)?.coverUrl
 
-    return this.sendOrQueue(message, 'series', coverUrl)
+    return this.sendOrQueue(message, 'series', coverUrl, items.length)
   }
 
   /**
    * Send message directly if connected, otherwise queue it.
    * Schedules retry with exponential backoff on failure.
+   * Records notification in status service for tracking.
    */
-  private async sendOrQueue(message: string, mediaType: MediaType, imageUrl?: string): Promise<boolean> {
+  private async sendOrQueue(message: string, mediaType: MediaType, imageUrl?: string, itemCount = 1): Promise<boolean> {
+    const notificationType = mediaType === 'movie' ? 'movies' : 'series'
+
     if (!whatsappClient.isConnected()) {
       console.log(`WhatsApp disconnected, queuing ${mediaType} notification`)
       queueService.addMessage(message, mediaType, imageUrl)
+      statusService.recordNotification(notificationType, itemCount, false)
       // Will be processed on reconnection by retryService
       return false
     }
@@ -109,6 +114,7 @@ class NotificationService {
       retryService.scheduleRetry(messageId)
     }
 
+    statusService.recordNotification(notificationType, itemCount, success)
     return success
   }
 

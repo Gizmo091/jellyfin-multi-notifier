@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { apiClient, type WhatsAppStatus, type QueueStatus, type AggregationStatus } from '../api/client'
+import { apiClient, type WhatsAppStatus, type QueueStatus, type AggregationStatus, type ServiceStatus } from '../api/client'
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -8,6 +8,7 @@ const error = ref<string | null>(null)
 const whatsappStatus = ref<WhatsAppStatus | null>(null)
 const queueStatus = ref<QueueStatus | null>(null)
 const aggregationStatus = ref<AggregationStatus | null>(null)
+const serviceStatus = ref<ServiceStatus | null>(null)
 
 const phoneNumber = ref('')
 const connecting = ref(false)
@@ -17,10 +18,11 @@ let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 async function loadData() {
   try {
-    const [waResponse, queueResponse, aggResponse] = await Promise.all([
+    const [waResponse, queueResponse, aggResponse, statusResponse] = await Promise.all([
       apiClient.getWhatsAppStatus(),
       apiClient.getQueue(),
       apiClient.getAggregation(),
+      apiClient.getStatus(),
     ])
 
     if (waResponse.success) {
@@ -34,6 +36,9 @@ async function loadData() {
     }
     if (aggResponse.success) {
       aggregationStatus.value = aggResponse.data
+    }
+    if (statusResponse.success) {
+      serviceStatus.value = statusResponse.data
     }
 
     error.value = null
@@ -61,6 +66,18 @@ async function connectWhatsApp() {
   }
 }
 
+function formatTimeAgo(timestamp: string): string {
+  const diff = Date.now() - new Date(timestamp).getTime()
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (days > 0) return `${days}d ago`
+  if (hours > 0) return `${hours}h ago`
+  if (minutes > 0) return `${minutes}m ago`
+  return 'just now'
+}
+
 onMounted(() => {
   loadData()
   refreshInterval = setInterval(loadData, 5000) // Refresh every 5 seconds
@@ -84,6 +101,22 @@ onUnmounted(() => {
     </div>
 
     <div v-else class="space-y-6">
+      <!-- Service Status Bar -->
+      <div v-if="serviceStatus" class="bg-white rounded-lg shadow p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-6">
+          <div class="flex items-center">
+            <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+            <span class="text-sm text-gray-600">Service Running</span>
+          </div>
+          <div class="text-sm text-gray-500">
+            Uptime: <span class="font-medium text-gray-700">{{ serviceStatus.uptime.formatted }}</span>
+          </div>
+        </div>
+        <div v-if="serviceStatus.lastNotification" class="text-sm text-gray-500">
+          Last notification: <span class="font-medium text-gray-700">{{ formatTimeAgo(serviceStatus.lastNotification.timestamp) }}</span>
+        </div>
+      </div>
+
       <!-- Status Cards -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <!-- WhatsApp Status -->
@@ -179,6 +212,35 @@ onUnmounted(() => {
             {{ connecting ? 'Connecting...' : 'Connect' }}
           </button>
         </form>
+      </div>
+
+      <!-- Recent Activity -->
+      <div v-if="serviceStatus && serviceStatus.recentNotifications.length > 0" class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold mb-4">Recent Notifications</h3>
+        <div class="space-y-2">
+          <div
+            v-for="(notification, index) in serviceStatus.recentNotifications"
+            :key="index"
+            class="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+          >
+            <div class="flex items-center">
+              <span class="text-lg mr-3">{{ notification.type === 'movies' ? '🎬' : '📺' }}</span>
+              <div>
+                <span class="font-medium capitalize">{{ notification.type }}</span>
+                <span class="text-gray-500 text-sm ml-2">{{ notification.count }} item{{ notification.count > 1 ? 's' : '' }}</span>
+              </div>
+            </div>
+            <div class="flex items-center">
+              <span
+                class="px-2 py-1 rounded text-xs mr-3"
+                :class="notification.success ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'"
+              >
+                {{ notification.success ? 'Sent' : 'Queued' }}
+              </span>
+              <span class="text-sm text-gray-500">{{ formatTimeAgo(notification.timestamp) }}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Pending Messages -->
