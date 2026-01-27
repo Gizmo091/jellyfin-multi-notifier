@@ -247,6 +247,76 @@ class WhatsAppClient extends EventEmitter {
       return false
     }
   }
+
+  /**
+   * Sends an image message with optional caption to a WhatsApp group or individual chat.
+   *
+   * @param jid - The WhatsApp JID (group: xxx@g.us, individual: xxx@s.whatsapp.net)
+   * @param imageUrl - URL of the image to send
+   * @param caption - Optional caption for the image
+   * @param fallbackToText - If true, sends caption as text if image fetch fails (default: true)
+   * @returns true if message was sent successfully, false otherwise
+   */
+  async sendImageMessage(
+    jid: string,
+    imageUrl: string,
+    caption?: string,
+    fallbackToText = true
+  ): Promise<boolean> {
+    if (!this.isConnected() || !this.socket) {
+      console.error('Cannot send image: WhatsApp not connected')
+      this.emit('message-failed', { jid, type: 'image', error: 'Not connected' })
+      return false
+    }
+
+    // Normalize group ID format
+    let targetJid = jid
+    if (!jid.includes('@')) {
+      targetJid = `${jid}@g.us`
+    }
+
+    try {
+      // Fetch image from URL
+      const response = await fetch(imageUrl)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: HTTP ${response.status}`)
+      }
+
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.startsWith('image/')) {
+        throw new Error(`Invalid content type: ${contentType}`)
+      }
+
+      const arrayBuffer = await response.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+
+      // Send image via WhatsApp
+      const result = await this.socket.sendMessage(targetJid, {
+        image: buffer,
+        caption: caption || undefined,
+      })
+
+      console.log(`Image sent to ${targetJid}${caption ? ` with caption: "${caption.substring(0, 30)}${caption.length > 30 ? '...' : ''}"` : ''}`)
+      this.emit('message-sent', { jid: targetJid, type: 'image', caption, messageId: result?.key?.id })
+      return true
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error(`Failed to send image to ${targetJid}:`, errorMessage)
+
+      // Fallback to text message if enabled and caption provided
+      if (fallbackToText && caption) {
+        console.log(`Falling back to text message for ${targetJid}`)
+        const textSent = await this.sendTextMessage(targetJid, caption)
+        if (textSent) {
+          this.emit('message-fallback', { jid: targetJid, originalType: 'image', fallbackType: 'text' })
+          return true
+        }
+      }
+
+      this.emit('message-failed', { jid: targetJid, type: 'image', error: errorMessage })
+      return false
+    }
+  }
 }
 
 // Singleton instance

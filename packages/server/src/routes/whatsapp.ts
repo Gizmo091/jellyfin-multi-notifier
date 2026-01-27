@@ -22,6 +22,19 @@ interface SendMessageResponseData {
   groupId: string
 }
 
+interface SendImageRequestBody {
+  groupId?: string
+  imageUrl: string
+  caption?: string
+  fallbackToText?: boolean
+}
+
+interface SendImageResponseData {
+  sent: boolean
+  groupId: string
+  fallback?: boolean
+}
+
 /**
  * WhatsApp API routes for connection management.
  */
@@ -226,6 +239,90 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
         return {
           success: false,
           error: 'Failed to send message. Check logs for details.',
+        }
+      }
+    }
+  )
+
+  /**
+   * POST /api/whatsapp/send-image
+   * Sends an image with optional caption to a WhatsApp group.
+   * Falls back to text message if image fetch fails (configurable).
+   */
+  fastify.post<{ Body: SendImageRequestBody }>(
+    '/api/whatsapp/send-image',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['imageUrl'],
+          properties: {
+            groupId: {
+              type: 'string',
+            },
+            imageUrl: {
+              type: 'string',
+              format: 'uri',
+            },
+            caption: {
+              type: 'string',
+              maxLength: 4096,
+            },
+            fallbackToText: {
+              type: 'boolean',
+              default: true,
+            },
+          },
+        },
+      },
+    },
+    async (request): Promise<ApiResponse<SendImageResponseData>> => {
+      const { groupId, imageUrl, caption, fallbackToText = true } = request.body
+
+      // Validate image URL
+      if (!imageUrl || imageUrl.trim().length === 0) {
+        return {
+          success: false,
+          error: 'Image URL is required',
+        }
+      }
+
+      // Determine target group
+      const targetGroup = groupId || config.whatsappGroupId
+
+      if (!targetGroup) {
+        return {
+          success: false,
+          error: 'No group ID provided and WHATSAPP_GROUP_ID not configured',
+        }
+      }
+
+      // Check connection status
+      if (!whatsappClient.isConnected()) {
+        fastify.log.warn('Attempted to send image while WhatsApp disconnected')
+        return {
+          success: false,
+          error: 'WhatsApp is not connected. Please connect first.',
+        }
+      }
+
+      // Send the image
+      const sent = await whatsappClient.sendImageMessage(targetGroup, imageUrl, caption, fallbackToText)
+
+      if (sent) {
+        fastify.log.info({ groupId: targetGroup, imageUrl: imageUrl.substring(0, 50) }, 'Image sent successfully')
+        return {
+          success: true,
+          data: {
+            sent: true,
+            groupId: targetGroup,
+          },
+        }
+      } else {
+        fastify.log.error({ groupId: targetGroup }, 'Failed to send image')
+        return {
+          success: false,
+          error: 'Failed to send image. Check logs for details.',
         }
       }
     }
