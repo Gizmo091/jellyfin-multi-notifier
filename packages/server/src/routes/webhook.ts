@@ -1,18 +1,15 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { timingSafeEqual } from 'crypto'
 import { config } from '../config.js'
-import type { ApiResponse } from '../types/index.js'
+import { extractMediaEvent } from '../services/media-extractor.js'
+import { mediaStore } from '../services/media-store.js'
+import type { ApiResponse, JellyfinWebhookPayload, MediaEvent } from '../types/index.js'
 
 // Webhook response types
 interface WebhookReceivedData {
   received: true
   timestamp: string
-}
-
-// Jellyfin webhook payload (basic structure, will be extended in Story 1.3)
-export interface JellyfinWebhookPayload {
-  NotificationType?: string
-  [key: string]: unknown
+  event?: MediaEvent | null
 }
 
 /**
@@ -67,8 +64,6 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
     '/webhook/jellyfin',
     {
       schema: {
-        description: 'Receive webhook events from Jellyfin',
-        tags: ['webhook'],
         body: {
           type: 'object',
           additionalProperties: true,
@@ -83,6 +78,20 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
                 properties: {
                   received: { type: 'boolean' },
                   timestamp: { type: 'string' },
+                  event: {
+                    type: 'object',
+                    nullable: true,
+                    properties: {
+                      id: { type: 'string' },
+                      type: { type: 'string' },
+                      title: { type: 'string' },
+                      year: { type: 'number', nullable: true },
+                      coverUrl: { type: 'string', nullable: true },
+                      jellyfinId: { type: 'string' },
+                      eventType: { type: 'string' },
+                      timestamp: { type: 'string' },
+                    },
+                  },
                 },
               },
             },
@@ -98,17 +107,43 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (request, _reply): Promise<ApiResponse<WebhookReceivedData>> => {
-      // Log the webhook receipt (payload processing will be in Story 1.3)
+      const payload = request.body
+
+      // Log the webhook receipt
       fastify.log.info({
         msg: 'Webhook received from Jellyfin',
-        notificationType: request.body?.NotificationType,
+        notificationType: payload?.NotificationType,
       })
+
+      // Extract media event from payload
+      const event = extractMediaEvent(payload)
+
+      if (event) {
+        // Store the event for later aggregation (Epic 3)
+        mediaStore.addEvent(event)
+
+        fastify.log.info({
+          msg: 'Media event extracted and stored',
+          eventId: event.id,
+          type: event.type,
+          title: event.title,
+          eventType: event.eventType,
+          coverUrl: event.coverUrl,
+          storeCount: mediaStore.getEventCount(),
+        })
+      } else {
+        fastify.log.debug({
+          msg: 'Webhook not processed (unsupported type or missing data)',
+          notificationType: payload?.NotificationType,
+        })
+      }
 
       return {
         success: true,
         data: {
           received: true,
           timestamp: new Date().toISOString(),
+          event,
         },
       }
     }
