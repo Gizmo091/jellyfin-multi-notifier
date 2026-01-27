@@ -4,6 +4,7 @@ import { config } from './config.js'
 import { webhookRoutes } from './routes/webhook.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
 import { aggregationRoutes } from './routes/aggregation.js'
+import { redirectRoutes } from './routes/redirect.js'
 
 const fastify = Fastify({
   logger: {
@@ -42,6 +43,9 @@ await fastify.register(whatsappRoutes)
 
 // Register aggregation routes
 await fastify.register(aggregationRoutes)
+
+// Register redirect routes
+await fastify.register(redirectRoutes)
 
 // Start server
 const start = async () => {

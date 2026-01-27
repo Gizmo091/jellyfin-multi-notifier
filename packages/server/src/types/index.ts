@@ -23,6 +23,7 @@ export interface MediaEvent {
   jellyfinId: string
   eventType: 'added' | 'removed'
   timestamp: Date
+  redirectUrl?: string
 }
 
 // WhatsApp Types

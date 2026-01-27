@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import { MediaEvent } from '../../types/index.js'
 import { config } from '../../config.js'
 import { coverService } from '../cover/index.js'
+import { redirectService } from '../redirect/index.js'
 
 interface AggregationWindow {
   items: MediaEvent[]
@@ -85,7 +86,13 @@ class AggregationService extends EventEmitter {
     console.log(`Flushing ${type} window with ${items.length} items`)
 
     // Enhance items with high-quality covers
-    const enhancedItems = await coverService.enhanceWithCovers(items)
+    const withCovers = await coverService.enhanceWithCovers(items)
+
+    // Add redirect URLs for each item
+    const enhancedItems = withCovers.map((item) => ({
+      ...item,
+      redirectUrl: redirectService.createRedirect(item.jellyfinId, item.title),
+    }))
 
     this.emit(`${type}-ready`, enhancedItems)
   }
