@@ -50,3 +50,39 @@ export interface ServiceConfig {
   whatsappGroupId: string
   aggregationWindowMinutes: number
 }
+
+// Jellyfin Webhook Types
+export interface JellyfinWebhookPayload {
+  NotificationType?: string
+  ServerId?: string
+  ServerName?: string
+  ServerUrl?: string
+  Item?: JellyfinItem
+  User?: JellyfinUser
+  [key: string]: unknown
+}
+
+export interface JellyfinItem {
+  Id?: string
+  Name?: string
+  Type?: string
+  ProductionYear?: number
+  SeriesName?: string
+  SeasonName?: string
+  IndexNumber?: number
+  ParentIndexNumber?: number
+  ImageTags?: Record<string, string>
+  [key: string]: unknown
+}
+
+export interface JellyfinUser {
+  Id?: string
+  Name?: string
+  [key: string]: unknown
+}
+
+// Webhook Response Types
+export interface WebhookReceivedResponse {
+  received: true
+  timestamp: string
+}

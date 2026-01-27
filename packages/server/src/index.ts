@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { config } from './config.js'
+import { webhookRoutes } from './routes/webhook.js'
 
 const fastify = Fastify({
   logger: {
@@ -19,7 +20,7 @@ fastify.get('/health', async () => {
   return { success: true, data: { status: 'ok' } }
 })
 
-// Placeholder for future routes
+// Root endpoint
 fastify.get('/', async () => {
   return {
     success: true,
@@ -30,6 +31,9 @@ fastify.get('/', async () => {
     },
   }
 })
+
+// Register webhook routes
+await fastify.register(webhookRoutes)
 
 // Start server
 const start = async () => {
