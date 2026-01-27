@@ -7,6 +7,7 @@ import { aggregationRoutes } from './routes/aggregation.js'
 import { redirectRoutes } from './routes/redirect.js'
 import { queueRoutes } from './routes/queue.js'
 import { notificationService } from './services/notification/index.js'
+import { retryService } from './services/retry/index.js'
 
 const fastify = Fastify({
   logger: {
@@ -54,6 +55,9 @@ await fastify.register(queueRoutes)
 
 // Initialize notification service (wires aggregation events to WhatsApp)
 notificationService.initialize()
+
+// Initialize retry service (handles queue processing and automatic retries)
+retryService.initialize()
 
 // Start server
 const start = async () => {

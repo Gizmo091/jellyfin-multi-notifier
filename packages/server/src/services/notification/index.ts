@@ -3,6 +3,7 @@ import { config } from '../../config.js'
 import { whatsappClient } from '../whatsapp/client.js'
 import { aggregationService } from '../aggregation/index.js'
 import { queueService } from '../queue/index.js'
+import { retryService } from '../retry/index.js'
 
 /**
  * Notification service for formatting and sending WhatsApp messages.
@@ -83,11 +84,13 @@ class NotificationService {
 
   /**
    * Send message directly if connected, otherwise queue it.
+   * Schedules retry with exponential backoff on failure.
    */
   private async sendOrQueue(message: string, mediaType: MediaType, imageUrl?: string): Promise<boolean> {
     if (!whatsappClient.isConnected()) {
       console.log(`WhatsApp disconnected, queuing ${mediaType} notification`)
       queueService.addMessage(message, mediaType, imageUrl)
+      // Will be processed on reconnection by retryService
       return false
     }
 
@@ -102,7 +105,8 @@ class NotificationService {
 
     if (!success) {
       console.log(`Failed to send ${mediaType} notification, queuing for retry`)
-      queueService.addMessage(message, mediaType, imageUrl)
+      const messageId = queueService.addMessage(message, mediaType, imageUrl)
+      retryService.scheduleRetry(messageId)
     }
 
     return success
