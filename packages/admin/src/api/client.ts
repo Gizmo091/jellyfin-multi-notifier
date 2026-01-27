@@ -19,6 +19,7 @@ async function request<T>(
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
@@ -32,11 +33,75 @@ async function request<T>(
   }
 }
 
+export interface WhatsAppStatus {
+  connected: boolean
+  phoneNumber?: string
+  lastConnected?: string
+  pairingCode?: string
+  error?: string
+  disconnectReason?: string
+  isReconnecting?: boolean
+}
+
+export interface QueueStatus {
+  status: {
+    pending: number
+    sent: number
+    failed: number
+    total: number
+  }
+  messages: Array<{
+    id: number
+    content: string
+    mediaType: string
+    status: string
+    retryCount: number
+    createdAt: string
+  }>
+}
+
+export interface AggregationStatus {
+  movies: {
+    count: number
+    windowStart: string | null
+    items: Array<{ title: string; type: string }>
+  }
+  series: {
+    count: number
+    windowStart: string | null
+    items: Array<{ title: string; type: string }>
+  }
+  windowDurationMinutes: number
+}
+
+export interface AlertChannels {
+  email: boolean
+  telegram: boolean
+  discord: boolean
+}
+
+export interface ConfigStatus {
+  jellyfinUrl: string
+  whatsappGroupId: string
+  aggregationWindowMinutes: number
+  publicUrl: string
+  alerts: {
+    emailConfigured: boolean
+    telegramConfigured: boolean
+    discordConfigured: boolean
+  }
+}
+
+export interface AlertTestResult {
+  channel: string
+  success: boolean
+  error?: string
+}
+
 export const apiClient = {
   async getHealth(): Promise<ApiResponse<{ status: string }>> {
-    // Use health endpoint directly, not under /api
     try {
-      const response = await fetch('/health')
+      const response = await fetch('/health', { credentials: 'include' })
       const data = await response.json()
       return data as ApiResponse<{ status: string }>
     } catch {
@@ -44,22 +109,48 @@ export const apiClient = {
     }
   },
 
-  async getConfig<T>(): Promise<ApiResponse<T>> {
-    return request<T>('/config')
+  async getWhatsAppStatus(): Promise<ApiResponse<WhatsAppStatus>> {
+    return request<WhatsAppStatus>('/whatsapp/status')
   },
 
-  async updateConfig<T>(config: Partial<T>): Promise<ApiResponse<T>> {
-    return request<T>('/config', {
-      method: 'PUT',
-      body: JSON.stringify(config),
+  async connectWhatsApp(phoneNumber: string): Promise<ApiResponse<{ pairingCode: string }>> {
+    return request<{ pairingCode: string }>('/whatsapp/connect', {
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber }),
     })
   },
 
-  async getWhatsAppStatus<T>(): Promise<ApiResponse<T>> {
-    return request<T>('/whatsapp/status')
+  async disconnectWhatsApp(): Promise<ApiResponse<{ message: string }>> {
+    return request<{ message: string }>('/whatsapp/disconnect', {
+      method: 'POST',
+    })
   },
 
-  async getQueue<T>(): Promise<ApiResponse<T>> {
-    return request<T>('/queue')
+  async getQueue(): Promise<ApiResponse<QueueStatus>> {
+    return request<QueueStatus>('/queue')
+  },
+
+  async getAggregation(): Promise<ApiResponse<AggregationStatus>> {
+    return request<AggregationStatus>('/aggregation/status')
+  },
+
+  async flushAggregation(): Promise<ApiResponse<{ message: string }>> {
+    return request<{ message: string }>('/aggregation/flush', {
+      method: 'POST',
+    })
+  },
+
+  async getAlertStatus(): Promise<ApiResponse<AlertChannels>> {
+    return request<AlertChannels>('/alerts/status')
+  },
+
+  async testAlerts(): Promise<ApiResponse<{ results: AlertTestResult[] }>> {
+    return request<{ results: AlertTestResult[] }>('/alerts/test', {
+      method: 'POST',
+    })
+  },
+
+  async getConfig(): Promise<ApiResponse<ConfigStatus>> {
+    return request<ConfigStatus>('/config')
   },
 }
