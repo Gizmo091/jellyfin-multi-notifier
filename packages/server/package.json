@@ -11,7 +11,7 @@
     "test": "echo \"No tests yet\" && exit 0"
   },
   "dependencies": {
-    "@fastify/cookie": "^10.0.0",
+    "@fastify/cookie": "^10.0.1",
     "@fastify/cors": "^10.0.0",
     "@fastify/static": "^8.0.0",
     "@hapi/boom": "^9.1.4",
