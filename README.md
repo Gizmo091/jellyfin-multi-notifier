@@ -101,6 +101,8 @@ jellyfin-whatsapp-notifier/
 | `/api/aggregation/status` | GET | View aggregation window status |
 | `/api/aggregation/flush` | POST | Force flush aggregation windows |
 | `/api/redirects` | GET | List all redirect entries |
+| `/api/queue` | GET | View message queue status |
+| `/api/queue/pending` | GET | View pending messages |
 | `/r/:id` | GET | Redirect to Jellyfin content |
 | `/health` | GET | Health check |
 

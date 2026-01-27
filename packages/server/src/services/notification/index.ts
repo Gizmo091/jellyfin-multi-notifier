@@ -1,11 +1,13 @@
-import { MediaEvent } from '../../types/index.js'
+import { MediaEvent, MediaType } from '../../types/index.js'
 import { config } from '../../config.js'
 import { whatsappClient } from '../whatsapp/client.js'
 import { aggregationService } from '../aggregation/index.js'
+import { queueService } from '../queue/index.js'
 
 /**
  * Notification service for formatting and sending WhatsApp messages.
  * Listens to aggregation events and sends formatted notifications.
+ * Queues messages when WhatsApp is disconnected for later delivery.
  */
 class NotificationService {
   private initialized = false
@@ -39,6 +41,7 @@ class NotificationService {
 
   /**
    * Format and send a movies notification.
+   * Queues the message if WhatsApp is disconnected.
    */
   async sendMoviesNotification(items: MediaEvent[]): Promise<boolean> {
     if (items.length === 0) {
@@ -54,16 +57,12 @@ class NotificationService {
     const message = this.formatMoviesMessage(items)
     const coverUrl = items.find((i) => i.coverUrl)?.coverUrl
 
-    console.log(`Sending movies notification (${items.length} items)${coverUrl ? ' with cover' : ''}`)
-
-    if (coverUrl) {
-      return whatsappClient.sendImageMessage(config.whatsappGroupId, coverUrl, message)
-    }
-    return whatsappClient.sendTextMessage(config.whatsappGroupId, message)
+    return this.sendOrQueue(message, 'movie', coverUrl)
   }
 
   /**
    * Format and send a series notification.
+   * Queues the message if WhatsApp is disconnected.
    */
   async sendSeriesNotification(items: MediaEvent[]): Promise<boolean> {
     if (items.length === 0) {
@@ -79,12 +78,66 @@ class NotificationService {
     const message = this.formatSeriesMessage(items)
     const coverUrl = items.find((i) => i.coverUrl)?.coverUrl
 
-    console.log(`Sending series notification (${items.length} items)${coverUrl ? ' with cover' : ''}`)
+    return this.sendOrQueue(message, 'series', coverUrl)
+  }
 
-    if (coverUrl) {
-      return whatsappClient.sendImageMessage(config.whatsappGroupId, coverUrl, message)
+  /**
+   * Send message directly if connected, otherwise queue it.
+   */
+  private async sendOrQueue(message: string, mediaType: MediaType, imageUrl?: string): Promise<boolean> {
+    if (!whatsappClient.isConnected()) {
+      console.log(`WhatsApp disconnected, queuing ${mediaType} notification`)
+      queueService.addMessage(message, mediaType, imageUrl)
+      return false
     }
-    return whatsappClient.sendTextMessage(config.whatsappGroupId, message)
+
+    console.log(`Sending ${mediaType} notification${imageUrl ? ' with cover' : ''}`)
+
+    let success: boolean
+    if (imageUrl) {
+      success = await whatsappClient.sendImageMessage(config.whatsappGroupId, imageUrl, message)
+    } else {
+      success = await whatsappClient.sendTextMessage(config.whatsappGroupId, message)
+    }
+
+    if (!success) {
+      console.log(`Failed to send ${mediaType} notification, queuing for retry`)
+      queueService.addMessage(message, mediaType, imageUrl)
+    }
+
+    return success
+  }
+
+  /**
+   * Send a queued message by ID.
+   * Returns true if sent successfully, false otherwise.
+   */
+  async sendQueuedMessage(messageId: number): Promise<boolean> {
+    const msg = queueService.getMessage(messageId)
+    if (!msg) {
+      console.warn(`Queued message ${messageId} not found`)
+      return false
+    }
+
+    if (!whatsappClient.isConnected()) {
+      console.log(`WhatsApp disconnected, cannot send queued message ${messageId}`)
+      return false
+    }
+
+    let success: boolean
+    if (msg.imageUrl) {
+      success = await whatsappClient.sendImageMessage(config.whatsappGroupId, msg.imageUrl, msg.content)
+    } else {
+      success = await whatsappClient.sendTextMessage(config.whatsappGroupId, msg.content)
+    }
+
+    if (success) {
+      queueService.updateStatus(messageId, 'sent')
+      // Optionally remove sent messages immediately
+      queueService.removeMessage(messageId)
+    }
+
+    return success
   }
 
   /**
@@ -113,7 +166,6 @@ class NotificationService {
     const lines: string[] = ['Nouveautes series']
 
     for (const item of items) {
-      // For episodes, the title might include series and episode info
       const titleLine = item.year ? `${item.title} (${item.year})` : item.title
       lines.push(`\n${titleLine}`)
 
