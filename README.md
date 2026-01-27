@@ -66,6 +66,8 @@ docker-compose up -d
 | `WEBHOOK_SECRET` | Shared secret for webhook validation | Yes |
 | `WHATSAPP_GROUP_ID` | Target WhatsApp group ID | Yes |
 | `TMDB_API_KEY` | TMDB API key for covers | No |
+| `PUBLIC_URL` | Public URL for redirect links (default: http://localhost:3000) | No |
+| `AGGREGATION_WINDOW_MINUTES` | Aggregation window duration (default: 15) | No |
 
 ### Jellyfin Webhook Setup
 
@@ -92,11 +94,14 @@ jellyfin-whatsapp-notifier/
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/webhook/jellyfin` | POST | Jellyfin webhook receiver |
-| `/api/config` | GET/PUT | Service configuration |
 | `/api/whatsapp/status` | GET | WhatsApp connection status |
 | `/api/whatsapp/connect` | POST | Trigger WhatsApp connection |
-| `/api/queue` | GET | View pending messages |
-| `/redirect/:id` | GET | Redirect to Jellyfin content |
+| `/api/whatsapp/send` | POST | Send text message |
+| `/api/whatsapp/send-image` | POST | Send image with caption |
+| `/api/aggregation/status` | GET | View aggregation window status |
+| `/api/aggregation/flush` | POST | Force flush aggregation windows |
+| `/api/redirects` | GET | List all redirect entries |
+| `/r/:id` | GET | Redirect to Jellyfin content |
 | `/health` | GET | Health check |
 
 ## License

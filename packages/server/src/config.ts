@@ -6,6 +6,7 @@ export interface Config {
   webhookSecret: string
   whatsappGroupId: string
   aggregationWindowMinutes: number
+  publicUrl: string
   smtpHost: string
   smtpPort: number
   smtpUser: string
@@ -36,6 +37,7 @@ export const config: Config = {
   webhookSecret: getEnv('WEBHOOK_SECRET', ''),
   whatsappGroupId: getEnv('WHATSAPP_GROUP_ID', ''),
   aggregationWindowMinutes: getEnvNumber('AGGREGATION_WINDOW_MINUTES', 15),
+  publicUrl: getEnv('PUBLIC_URL', 'http://localhost:3000'),
   smtpHost: getEnv('SMTP_HOST', ''),
   smtpPort: getEnvNumber('SMTP_PORT', 587),
   smtpUser: getEnv('SMTP_USER', ''),
