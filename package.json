@@ -1,0 +1,23 @@
+{
+  "name": "jellyfin-whatsapp-notifier",
+  "version": "1.0.0",
+  "description": "Autonomous service that monitors Jellyfin and notifies WhatsApp groups",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/server",
+    "packages/admin"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w packages/server",
+    "dev:admin": "npm run dev -w packages/admin",
+    "build": "npm run build -w packages/server && npm run build -w packages/admin",
+    "start": "npm run start -w packages/server",
+    "test": "npm run test -w packages/server"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "author": "Mathieu",
+  "license": "MIT"
+}

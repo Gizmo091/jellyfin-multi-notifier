@@ -1,0 +1,112 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# Data directory (Docker volume - contains SQLite DB and WhatsApp session)
+data/
+
+# IDE and editors
+## VSCode
+.vscode/
+*.code-workspace
+
+## JetBrains (IntelliJ, WebStorm, PhpStorm)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+## Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+## Vim/Neovim
+*.swp
+*.swo
+*.vim
+*~
+Session.vim
+.netrwhist
+
+## Emacs
+\#*\#
+.emacs.desktop
+.emacs.desktop.lock
+auto-save-list
+
+# OS files
+## macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+## Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+## Linux
+.directory
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+tmp/
+temp/
+
+# Lock files (keep package-lock.json, ignore others)
+yarn.lock
+pnpm-lock.yaml
+
+# Vite
+*.local
+
+# Vue
+*.vue.js
+*.vue.ts
+
+# Docker
+.docker/
+
+# BMAD (development workflow - not needed in production)
+_bmad-output/
+_bmad/
+
+# Claude Code
+.claude/
