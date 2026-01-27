@@ -30,6 +30,8 @@ export interface WhatsAppStatus {
   connected: boolean
   phoneNumber?: string
   lastConnected?: Date
+  pairingCode?: string
+  error?: string
 }
 
 // Queue Types

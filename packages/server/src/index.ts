@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { config } from './config.js'
 import { webhookRoutes } from './routes/webhook.js'
+import { whatsappRoutes } from './routes/whatsapp.js'
 
 const fastify = Fastify({
   logger: {
@@ -34,6 +35,9 @@ fastify.get('/', async () => {
 
 // Register webhook routes
 await fastify.register(webhookRoutes)
+
+// Register WhatsApp routes
+await fastify.register(whatsappRoutes)
 
 // Start server
 const start = async () => {
