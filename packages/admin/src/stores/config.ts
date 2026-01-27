@@ -19,7 +19,7 @@ export const useConfigStore = defineStore('config', () => {
     loading.value = false
   }
 
-  async function updateConfig(newConfig: Partial<ServiceConfig>) {
+  async function updateConfig(_newConfig: Partial<ServiceConfig>) {
     loading.value = true
     error.value = null
     // TODO: Implement API call

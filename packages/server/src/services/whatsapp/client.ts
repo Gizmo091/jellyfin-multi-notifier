@@ -213,6 +213,40 @@ class WhatsAppClient extends EventEmitter {
   isConnected(): boolean {
     return this.status.connected
   }
+
+  /**
+   * Sends a text message to a WhatsApp group or individual chat.
+   *
+   * @param jid - The WhatsApp JID (group: xxx@g.us, individual: xxx@s.whatsapp.net)
+   * @param text - The message text to send
+   * @returns true if message was sent successfully, false otherwise
+   */
+  async sendTextMessage(jid: string, text: string): Promise<boolean> {
+    if (!this.isConnected() || !this.socket) {
+      console.error('Cannot send message: WhatsApp not connected')
+      this.emit('message-failed', { jid, text, error: 'Not connected' })
+      return false
+    }
+
+    // Normalize group ID format
+    let targetJid = jid
+    if (!jid.includes('@')) {
+      // Assume it's a group ID without suffix
+      targetJid = `${jid}@g.us`
+    }
+
+    try {
+      const result = await this.socket.sendMessage(targetJid, { text })
+      console.log(`Message sent to ${targetJid}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`)
+      this.emit('message-sent', { jid: targetJid, text, messageId: result?.key?.id })
+      return true
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error(`Failed to send message to ${targetJid}:`, errorMessage)
+      this.emit('message-failed', { jid: targetJid, text, error: errorMessage })
+      return false
+    }
+  }
 }
 
 // Singleton instance
