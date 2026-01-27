@@ -105,6 +105,8 @@ jellyfin-whatsapp-notifier/
 | `/api/queue/pending` | GET | View pending messages |
 | `/api/alerts/status` | GET | View configured alert channels |
 | `/api/alerts/test` | POST | Send test alert to all channels |
+| `/api/config` | GET | View current configuration |
+| `/api/status` | GET | Service status with uptime and activity |
 | `/r/:id` | GET | Redirect to Jellyfin content |
 | `/health` | GET | Health check |
 
