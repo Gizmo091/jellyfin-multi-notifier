@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import { MediaEvent } from '../../types/index.js'
 import { config } from '../../config.js'
+import { coverService } from '../cover/index.js'
 
 interface AggregationWindow {
   items: MediaEvent[]
@@ -67,8 +68,9 @@ class AggregationService extends EventEmitter {
 
   /**
    * Flush a window and emit the ready event with accumulated items.
+   * Enhances items with high-quality covers before emitting.
    */
-  private flushWindow(window: AggregationWindow, type: 'movies' | 'series'): void {
+  private async flushWindow(window: AggregationWindow, type: 'movies' | 'series'): Promise<void> {
     if (window.items.length === 0) {
       window.timer = null
       window.startTime = null
@@ -81,7 +83,11 @@ class AggregationService extends EventEmitter {
     window.startTime = null
 
     console.log(`Flushing ${type} window with ${items.length} items`)
-    this.emit(`${type}-ready`, items)
+
+    // Enhance items with high-quality covers
+    const enhancedItems = await coverService.enhanceWithCovers(items)
+
+    this.emit(`${type}-ready`, enhancedItems)
   }
 
   /**
