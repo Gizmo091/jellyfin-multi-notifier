@@ -32,6 +32,8 @@ export interface WhatsAppStatus {
   lastConnected?: Date
   pairingCode?: string
   error?: string
+  disconnectReason?: string
+  isReconnecting?: boolean
 }
 
 // Queue Types

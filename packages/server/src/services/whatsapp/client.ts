@@ -18,6 +18,8 @@ export interface WhatsAppStatus {
   lastConnected?: Date
   pairingCode?: string
   error?: string
+  disconnectReason?: string
+  isReconnecting?: boolean
 }
 
 /**
@@ -88,6 +90,10 @@ class WhatsAppClient extends EventEmitter {
           const statusCode = error?.output?.statusCode
           const reason = DisconnectReason[statusCode] || `Unknown (${statusCode})`
 
+          // Store disconnection reason in status
+          this.status.disconnectReason = reason
+          this.status.isReconnecting = false
+
           console.log(`WhatsApp disconnected: ${reason}`)
 
           if (statusCode === DisconnectReason.loggedOut) {
@@ -101,6 +107,7 @@ class WhatsAppClient extends EventEmitter {
             // Try to reconnect for other errors
             if (this.reconnectAttempts < this.maxReconnectAttempts) {
               this.reconnectAttempts++
+              this.status.isReconnecting = true
               const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000)
               console.log(`Attempting reconnect in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
               setTimeout(() => this.connect(phoneNumber), delay)
@@ -120,6 +127,8 @@ class WhatsAppClient extends EventEmitter {
           this.status.phoneNumber = this.socket?.user?.id?.split(':')[0]
           this.status.pairingCode = undefined
           this.status.error = undefined
+          this.status.disconnectReason = undefined
+          this.status.isReconnecting = false
           this.reconnectAttempts = 0
           this.isConnecting = false
           console.log(`WhatsApp connected successfully as ${this.status.phoneNumber}`)
