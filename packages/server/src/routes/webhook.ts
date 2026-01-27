@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'crypto'
 import { config } from '../config.js'
 import { extractMediaEvent } from '../services/media-extractor.js'
 import { mediaStore } from '../services/media-store.js'
+import { aggregationService } from '../services/aggregation/index.js'
 import type { ApiResponse, JellyfinWebhookPayload, MediaEvent } from '../types/index.js'
 
 // Webhook response types
@@ -119,8 +120,13 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
       const event = extractMediaEvent(payload)
 
       if (event) {
-        // Store the event for later aggregation (Epic 3)
+        // Store the event for later reference
         mediaStore.addEvent(event)
+
+        // Add to aggregation window if it's an addition event
+        if (event.eventType === 'added') {
+          aggregationService.addMedia(event)
+        }
 
         fastify.log.info({
           msg: 'Media event extracted and stored',
