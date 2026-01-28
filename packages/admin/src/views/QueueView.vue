@@ -45,6 +45,24 @@ async function flushAggregation() {
   }
 }
 
+const cancellingWindow = ref<string | null>(null)
+
+async function cancelAggregation(type: 'movies' | 'series' | 'movies-removed' | 'series-removed') {
+  cancellingWindow.value = type
+  try {
+    const response = await apiClient.cancelAggregation(type)
+    if (response.success) {
+      await loadData()
+    } else {
+      error.value = response.error
+    }
+  } catch {
+    error.value = 'Failed to cancel aggregation'
+  } finally {
+    cancellingWindow.value = null
+  }
+}
+
 function formatCountdown(windowStart: string, windowDurationMinutes: number): string {
   const endMs = new Date(windowStart).getTime() + windowDurationMinutes * 60000
   const remainingMs = endMs - now.value
@@ -106,9 +124,18 @@ onUnmounted(() => {
           <div v-if="aggregation && aggregation.movies.count > 0" class="border border-blue-200 rounded-lg p-4 bg-blue-50">
             <div class="flex justify-between items-center mb-2">
               <span class="font-medium text-blue-800">Movies ({{ aggregation.movies.count }})</span>
-              <span v-if="aggregation.movies.windowStart" class="text-sm font-mono text-blue-600">
-                {{ formatCountdown(aggregation.movies.windowStart, aggregation.movies.windowDurationMinutes) }}
-              </span>
+              <div class="flex items-center gap-2">
+                <span v-if="aggregation.movies.windowStart" class="text-sm font-mono text-blue-600">
+                  {{ formatCountdown(aggregation.movies.windowStart, aggregation.movies.windowDurationMinutes) }}
+                </span>
+                <button
+                  @click="cancelAggregation('movies')"
+                  :disabled="cancellingWindow === 'movies'"
+                  class="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                >
+                  {{ cancellingWindow === 'movies' ? '...' : 'Cancel' }}
+                </button>
+              </div>
             </div>
             <ul class="text-sm text-blue-700 space-y-1">
               <li v-for="(item, idx) in aggregation.movies.items" :key="idx" class="truncate">
@@ -121,9 +148,18 @@ onUnmounted(() => {
           <div v-if="aggregation && aggregation.series.count > 0" class="border border-purple-200 rounded-lg p-4 bg-purple-50">
             <div class="flex justify-between items-center mb-2">
               <span class="font-medium text-purple-800">Series ({{ aggregation.series.count }})</span>
-              <span v-if="aggregation.series.windowStart" class="text-sm font-mono text-purple-600">
-                {{ formatCountdown(aggregation.series.windowStart, aggregation.series.windowDurationMinutes) }}
-              </span>
+              <div class="flex items-center gap-2">
+                <span v-if="aggregation.series.windowStart" class="text-sm font-mono text-purple-600">
+                  {{ formatCountdown(aggregation.series.windowStart, aggregation.series.windowDurationMinutes) }}
+                </span>
+                <button
+                  @click="cancelAggregation('series')"
+                  :disabled="cancellingWindow === 'series'"
+                  class="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                >
+                  {{ cancellingWindow === 'series' ? '...' : 'Cancel' }}
+                </button>
+              </div>
             </div>
             <ul class="text-sm text-purple-700 space-y-1">
               <li v-for="(item, idx) in aggregation.series.items" :key="idx" class="truncate">
@@ -136,9 +172,18 @@ onUnmounted(() => {
           <div v-if="aggregation && aggregation.moviesRemoved.count > 0" class="border border-red-200 rounded-lg p-4 bg-red-50">
             <div class="flex justify-between items-center mb-2">
               <span class="font-medium text-red-800">Movies removed ({{ aggregation.moviesRemoved.count }})</span>
-              <span v-if="aggregation.moviesRemoved.windowStart" class="text-sm font-mono text-red-600">
-                {{ formatCountdown(aggregation.moviesRemoved.windowStart, aggregation.moviesRemoved.windowDurationMinutes) }}
-              </span>
+              <div class="flex items-center gap-2">
+                <span v-if="aggregation.moviesRemoved.windowStart" class="text-sm font-mono text-red-600">
+                  {{ formatCountdown(aggregation.moviesRemoved.windowStart, aggregation.moviesRemoved.windowDurationMinutes) }}
+                </span>
+                <button
+                  @click="cancelAggregation('movies-removed')"
+                  :disabled="cancellingWindow === 'movies-removed'"
+                  class="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                >
+                  {{ cancellingWindow === 'movies-removed' ? '...' : 'Cancel' }}
+                </button>
+              </div>
             </div>
             <ul class="text-sm text-red-700 space-y-1">
               <li v-for="(item, idx) in aggregation.moviesRemoved.items" :key="idx" class="truncate">
@@ -151,9 +196,18 @@ onUnmounted(() => {
           <div v-if="aggregation && aggregation.seriesRemoved.count > 0" class="border border-orange-200 rounded-lg p-4 bg-orange-50">
             <div class="flex justify-between items-center mb-2">
               <span class="font-medium text-orange-800">Series removed ({{ aggregation.seriesRemoved.count }})</span>
-              <span v-if="aggregation.seriesRemoved.windowStart" class="text-sm font-mono text-orange-600">
-                {{ formatCountdown(aggregation.seriesRemoved.windowStart, aggregation.seriesRemoved.windowDurationMinutes) }}
-              </span>
+              <div class="flex items-center gap-2">
+                <span v-if="aggregation.seriesRemoved.windowStart" class="text-sm font-mono text-orange-600">
+                  {{ formatCountdown(aggregation.seriesRemoved.windowStart, aggregation.seriesRemoved.windowDurationMinutes) }}
+                </span>
+                <button
+                  @click="cancelAggregation('series-removed')"
+                  :disabled="cancellingWindow === 'series-removed'"
+                  class="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                >
+                  {{ cancellingWindow === 'series-removed' ? '...' : 'Cancel' }}
+                </button>
+              </div>
             </div>
             <ul class="text-sm text-orange-700 space-y-1">
               <li v-for="(item, idx) in aggregation.seriesRemoved.items" :key="idx" class="truncate">

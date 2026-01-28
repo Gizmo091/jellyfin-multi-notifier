@@ -32,7 +32,8 @@ class JellyfinService {
 
     try {
       // We need a userId for the API call - use a system endpoint instead
-      const url = `${config.jellyfinUrl}/Items/${itemId}`
+      // Request DateCreated and Path fields explicitly
+      const url = `${config.jellyfinUrl}/Items/${itemId}?Fields=DateCreated,Path`
 
       const response = await fetch(url, {
         method: 'GET',
@@ -72,6 +73,13 @@ class JellyfinService {
         }
 
         const item = data.Items[0]
+        // Log raw API response for debugging
+        if (!item.DateCreated) {
+          logger.warn('Jellyfin', `DateCreated not returned by API for "${item.Name}", using current time`, {
+            itemId,
+            rawItem: JSON.stringify(item),
+          })
+        }
         return {
           id: item.Id,
           name: item.Name,
@@ -87,6 +95,14 @@ class JellyfinService {
         DateCreated?: string
         PremiereDate?: string
         Path?: string
+      }
+
+      // Log raw API response for debugging
+      if (!item.DateCreated) {
+        logger.warn('Jellyfin', `DateCreated not returned by API for "${item.Name}", using current time`, {
+          itemId,
+          rawItem: JSON.stringify(item),
+        })
       }
 
       return {
