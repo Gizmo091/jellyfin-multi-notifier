@@ -97,9 +97,19 @@ docker compose up -d
 7. Configure Jellyfin webhooks (see below)
 
 #### WhatsApp Setup
+
+> **Note**: Pairing code connection is currently experiencing issues. QR code connection is recommended.
+
+**Option 1: QR Code (Recommended)**
+- Leave `WHATSAPP_PHONE_NUMBER` empty in your `.env` file
+- Click "Connect WhatsApp" in the admin UI
+- A QR code will be displayed
+- On your phone: WhatsApp > Linked Devices > Link a Device > Scan QR Code
+
+**Option 2: Pairing Code (Unstable)**
 - Set `WHATSAPP_PHONE_NUMBER` in your `.env` file (international format without +, e.g., 33612345678)
 - Pairing code will be sent to your configured alert channels (email, Discord, Telegram)
-- On your phone: WhatsApp > Linked Devices > Link a Device
+- On your phone: WhatsApp > Linked Devices > Link a Device > Link with phone number
 - Enter the pairing code
 
 #### Discord Setup
