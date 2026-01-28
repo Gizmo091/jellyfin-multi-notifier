@@ -99,17 +99,14 @@ class WhatsAppClient extends EventEmitter {
 
         // Handle QR code for authentication
         if (qr) {
-          this.status.qrCode = qr
-          console.log('New QR code generated - scan with WhatsApp')
-          this.emit('qr', qr)
-
-          // If phone number is provided, request pairing code now (per Baileys docs)
-          // "you should wait at least until the connecting/QR event"
+          // If phone number is provided, request pairing code instead of using QR
+          // Don't emit QR when using pairing code - they can conflict
           if (this.pendingPhoneNumber && !this.pairingCodeRequested && this.socket) {
             this.pairingCodeRequested = true
             try {
               const code = await this.socket.requestPairingCode(this.pendingPhoneNumber)
               this.status.pairingCode = code
+              this.status.qrCode = undefined // Clear QR since we're using pairing code
               console.log('═'.repeat(50))
               console.log(`WhatsApp Pairing Code: ${code}`)
               console.log('Enter this code in WhatsApp > Linked Devices > Link a Device')
@@ -121,7 +118,13 @@ class WhatsAppClient extends EventEmitter {
               this.status.error = errorMessage
               this.emit('pairing-error', errorMessage)
             }
+          } else if (!this.pendingPhoneNumber) {
+            // Only use QR code if no phone number configured
+            this.status.qrCode = qr
+            console.log('New QR code generated - scan with WhatsApp')
+            this.emit('qr', qr)
           }
+          // If pairing code already requested, ignore subsequent QR events
         }
 
         if (connection === 'close') {
