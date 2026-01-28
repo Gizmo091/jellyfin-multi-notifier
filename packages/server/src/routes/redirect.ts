@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { redirectService } from '../services/redirect/index.js'
+import { config } from '../config.js'
 import type { ApiResponse } from '../types/index.js'
 
 interface RedirectParams {
@@ -8,9 +9,14 @@ interface RedirectParams {
 
 /**
  * Generate HTML page that tries to open Jellyfin app first, then falls back to web.
+ * Detects platform and uses appropriate URL scheme:
+ * - iOS: org.jellyfin.expo://items/{id}
+ * - Android: jellyfin://details?id={id}
  */
 function generateSmartRedirectHtml(itemId: string, webUrl: string, title: string): string {
-  const appUrl = `jellyfin://details?id=${itemId}`
+  // Platform-specific deep link URLs
+  const iosAppUrl = `org.jellyfin.expo://items/${itemId}`
+  const androidAppUrl = `jellyfin://details?id=${itemId}`
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -78,24 +84,38 @@ function generateSmartRedirectHtml(itemId: string, webUrl: string, title: string
   </div>
   <script>
     (function() {
-      var appUrl = ${JSON.stringify(appUrl)};
+      var iosAppUrl = ${JSON.stringify(iosAppUrl)};
+      var androidAppUrl = ${JSON.stringify(androidAppUrl)};
       var webUrl = ${JSON.stringify(webUrl)};
       var timeout;
 
-      // Try to open the app
-      window.location.href = appUrl;
+      // Detect platform
+      var userAgent = navigator.userAgent || navigator.vendor || window.opera;
+      var isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
+      var isAndroid = /android/i.test(userAgent);
 
-      // If still here after 2.5 seconds, redirect to web
-      timeout = setTimeout(function() {
+      // Choose appropriate app URL
+      var appUrl = isIOS ? iosAppUrl : (isAndroid ? androidAppUrl : null);
+
+      if (appUrl) {
+        // Try to open the app
+        window.location.href = appUrl;
+
+        // If still here after 2.5 seconds, redirect to web
+        timeout = setTimeout(function() {
+          window.location.href = webUrl;
+        }, 2500);
+
+        // If page becomes hidden (app opened), clear the timeout
+        document.addEventListener('visibilitychange', function() {
+          if (document.hidden) {
+            clearTimeout(timeout);
+          }
+        });
+      } else {
+        // Desktop or unknown platform: go directly to web
         window.location.href = webUrl;
-      }, 2500);
-
-      // If page becomes hidden (app opened), clear the timeout
-      document.addEventListener('visibilitychange', function() {
-        if (document.hidden) {
-          clearTimeout(timeout);
-        }
-      });
+      }
     })();
   </script>
 </body>
@@ -108,7 +128,9 @@ function generateSmartRedirectHtml(itemId: string, webUrl: string, title: string
 export async function redirectRoutes(fastify: FastifyInstance): Promise<void> {
   /**
    * GET /r/:id
-   * Smart redirect: tries Jellyfin app first, falls back to web.
+   * Redirects to Jellyfin content.
+   * If JELLYFIN_DEEP_LINK_ENABLED=true: tries app first, falls back to web.
+   * Otherwise: direct redirect to web interface.
    */
   fastify.get<{ Params: RedirectParams }>(
     '/r/:id',
@@ -126,8 +148,15 @@ export async function redirectRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const webUrl = redirectService.getJellyfinUrl(id)!
-      const html = generateSmartRedirectHtml(entry.jellyfinId, webUrl, entry.title)
 
+      // If deep link is disabled, redirect directly to web
+      if (!config.jellyfinDeepLinkEnabled) {
+        fastify.log.info({ redirectId: id, itemId: entry.jellyfinId, targetUrl: webUrl }, 'Redirecting to Jellyfin web')
+        return reply.redirect(webUrl)
+      }
+
+      // Deep link enabled: serve smart redirect page
+      const html = generateSmartRedirectHtml(entry.jellyfinId, webUrl, entry.title)
       fastify.log.info({ redirectId: id, itemId: entry.jellyfinId }, 'Serving smart redirect page')
       return reply.type('text/html').send(html)
     }

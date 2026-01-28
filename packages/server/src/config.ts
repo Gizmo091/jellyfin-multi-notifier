@@ -23,6 +23,7 @@ export interface Config {
   telegramChatId: string
   discordWebhookUrl: string
   tmdbApiKey: string
+  jellyfinDeepLinkEnabled: boolean
 }
 
 function getEnv(key: string, defaultValue = ''): string {
@@ -34,6 +35,12 @@ function getEnvNumber(key: string, defaultValue: number): number {
   if (value === undefined) return defaultValue
   const parsed = parseInt(value, 10)
   return isNaN(parsed) ? defaultValue : parsed
+}
+
+function getEnvBoolean(key: string, defaultValue: boolean): boolean {
+  const value = process.env[key]
+  if (value === undefined) return defaultValue
+  return value.toLowerCase() === 'true' || value === '1'
 }
 
 // Default aggregation window (used as fallback)
@@ -62,4 +69,6 @@ export const config: Config = {
   telegramChatId: getEnv('TELEGRAM_CHAT_ID', ''),
   discordWebhookUrl: getEnv('DISCORD_WEBHOOK_URL', ''),
   tmdbApiKey: getEnv('TMDB_API_KEY', ''),
+  // Deep link disabled by default - Jellyfin iOS/Android apps don't fully support item navigation via URL
+  jellyfinDeepLinkEnabled: getEnvBoolean('JELLYFIN_DEEP_LINK_ENABLED', false),
 }
