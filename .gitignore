@@ -110,6 +110,7 @@ vite.config.d.ts
 
 # BMAD workflow tooling (not needed in production)
 _bmad/
+_bmad
 # Note: _bmad-output/ is tracked - contains project documentation (PRD, architecture, stories)
 
 # Claude Code
