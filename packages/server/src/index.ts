@@ -84,7 +84,6 @@ if (fs.existsSync(adminDistPath)) {
   await fastify.register(fastifyStatic, {
     root: adminDistPath,
     prefix: '/',
-    decorateReply: false,
   })
 
   // SPA fallback: serve index.html for all non-API routes
