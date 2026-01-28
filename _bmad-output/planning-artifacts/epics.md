@@ -714,3 +714,167 @@ So that **I know everything is working** (FR21).
 **Given** recent notifications were sent
 **When** viewing activity
 **Then** I see a summary of recent successful deliveries
+
+---
+
+## Epic 6: Multi-Platform Enhancements (Post-MVP)
+
+Enrichissements ajoutés après la livraison du MVP, étendant les capacités au-delà du scope initial WhatsApp-only.
+
+### Story 6.1: Multi-Platform Notification Channels
+
+As an **admin**,
+I want **to send notifications to Discord and Telegram in addition to WhatsApp**,
+So that **I can reach users on their preferred platform**.
+
+**Acceptance Criteria:**
+
+**Given** the admin UI configuration page
+**When** I add a notification channel
+**Then** I can choose between WhatsApp, Discord, or Telegram
+
+**Given** a Discord channel is configured with a webhook URL
+**When** a notification is triggered
+**Then** the message is sent as a Discord embed with image
+
+**Given** a Telegram channel is configured with bot token and chat ID
+**When** a notification is triggered
+**Then** the message is sent via Telegram Bot API with photo
+
+**Given** multiple channels of different types are configured
+**When** a notification is triggered
+**Then** all enabled channels receive the notification independently
+
+**Implementation:**
+- New `notification_channels` table replacing `whatsapp_groups`
+- Sender abstraction layer (`services/senders/`)
+- Discord webhook integration (native fetch)
+- Telegram Bot API integration (native fetch)
+
+---
+
+### Story 6.2: Multi-Language Support per Channel
+
+As an **admin**,
+I want **to configure a different language for each notification channel**,
+So that **users receive notifications in their preferred language**.
+
+**Acceptance Criteria:**
+
+**Given** I configure a notification channel
+**When** I select a language (en, fr, es, de, it, pt)
+**Then** notifications to that channel use the selected language
+
+**Given** multiple channels with different languages
+**When** a notification is triggered
+**Then** each channel receives the message in its configured language
+
+**Given** a language is selected
+**When** covers are fetched from TMDB
+**Then** the search uses the channel's language for better accuracy and localized posters
+
+**Implementation:**
+- Language field in `notification_channels` table
+- Message formatter with translations for 6 languages
+- TMDB API calls with language parameter per channel group
+
+---
+
+### Story 6.3: Per-Type Aggregation Windows
+
+As an **admin**,
+I want **to configure different aggregation windows for each notification type**,
+So that **I can fine-tune notification frequency by content type**.
+
+**Acceptance Criteria:**
+
+**Given** the configuration
+**When** I set aggregation windows
+**Then** I can configure separate durations for:
+  - Movies added
+  - Series added
+  - Movies removed
+  - Series removed
+
+**Given** different window durations are configured
+**When** content is added/removed
+**Then** each type uses its own timer independently
+
+**Implementation:**
+- Environment variables: `AGGREGATION_WINDOW_MOVIES_MINUTES`, `AGGREGATION_WINDOW_SERIES_MINUTES`, etc.
+- Config object with per-type durations
+- Aggregation service with separate window management
+
+---
+
+### Story 6.4: Smart Redirect with App Deep-Linking
+
+As a **user**,
+I want **notification links to open the Jellyfin app when installed**,
+So that **I can start watching immediately without going through the browser**.
+
+**Acceptance Criteria:**
+
+**Given** I click a notification link on mobile
+**When** the Jellyfin app is installed
+**Then** the app opens directly to the content
+
+**Given** I click a notification link
+**When** the Jellyfin app is not installed or doesn't respond
+**Then** I'm redirected to the Jellyfin web interface after 2.5 seconds
+
+**Given** the redirect page is displayed
+**When** waiting for the app to open
+**Then** I see a loading spinner and a manual "open in browser" link
+
+**Implementation:**
+- HTML page with JavaScript attempting `jellyfin://details?id=xxx`
+- Timeout fallback to web URL
+- Visibility change detection to cancel fallback if app opens
+
+---
+
+### Story 6.5: Persistent Redirect Links
+
+As a **user**,
+I want **notification links to work even after server restarts**,
+So that **I can access content from older notifications**.
+
+**Acceptance Criteria:**
+
+**Given** a redirect link was created
+**When** the server restarts
+**Then** the link still works
+
+**Given** redirect links are stored
+**When** checking storage
+**Then** they are persisted in SQLite (same database as other data)
+
+**Given** old redirect links exist
+**When** cleanup is needed (optional)
+**Then** a method exists to remove entries older than a configurable duration
+
+**Implementation:**
+- SQLite `redirects` table with `short_id`, `jellyfin_id`, `title`, `created_at`
+- Index on `created_at` for cleanup queries
+- Default retention: 30 days (cleanup not automatic)
+
+---
+
+### Story 6.6: Project Rebranding to Multi Notifier
+
+As a **user**,
+I want **the project name to reflect its multi-platform capabilities**,
+So that **I understand it supports more than just WhatsApp**.
+
+**Acceptance Criteria:**
+
+**Given** the project
+**When** viewing any user-facing element
+**Then** it's named "Jellyfin Multi Notifier" instead of "Jellyfin WhatsApp Notifier"
+
+**Implementation:**
+- Updated package.json names
+- Updated UI titles (header, login page, browser tab)
+- Updated Docker container name
+- Updated alert messages
