@@ -352,6 +352,47 @@ class AggregationService extends EventEmitter {
     // Clear all persisted events
     this.db.prepare('DELETE FROM aggregation_events').run()
   }
+
+  /**
+   * Cancel a specific aggregation window without sending notifications.
+   * @param type The window type to cancel
+   * @returns The number of items that were discarded
+   */
+  cancelWindow(type: WindowKey): number {
+    const window = this.getWindow(type)
+    if (!window) {
+      logger.warn('Aggregation', `Cannot cancel unknown window type: ${type}`)
+      return 0
+    }
+
+    const itemCount = window.items.length
+    if (itemCount === 0) {
+      logger.debug('Aggregation', `Window ${type} is already empty`)
+      return 0
+    }
+
+    // Clear timer
+    if (window.timer) {
+      clearTimeout(window.timer)
+    }
+
+    // Log what we're discarding
+    logger.info('Aggregation', `Cancelling ${type} window with ${itemCount} items`, {
+      windowType: type,
+      itemCount,
+      titles: window.items.map(i => i.title),
+    })
+
+    // Reset window
+    window.items = []
+    window.timer = null
+    window.startTime = null
+
+    // Clear from database
+    this.clearPersistedWindow(type)
+
+    return itemCount
+  }
 }
 
 // Singleton instance

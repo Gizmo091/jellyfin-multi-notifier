@@ -285,6 +285,12 @@ export const apiClient = {
     })
   },
 
+  async cancelAggregation(type: 'movies' | 'series' | 'movies-removed' | 'series-removed'): Promise<ApiResponse<{ cancelled: boolean; itemsDiscarded: number }>> {
+    return request<{ cancelled: boolean; itemsDiscarded: number }>(`/aggregation/cancel/${type}`, {
+      method: 'POST',
+    })
+  },
+
   async getAlertStatus(): Promise<ApiResponse<AlertChannels>> {
     return request<AlertChannels>('/alerts/status')
   },

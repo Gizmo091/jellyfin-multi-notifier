@@ -118,6 +118,24 @@ function formatTimeAgo(timestamp: string): string {
   return 'just now'
 }
 
+const cancellingWindow = ref<string | null>(null)
+
+async function cancelAggregation(type: 'movies' | 'series' | 'movies-removed' | 'series-removed') {
+  cancellingWindow.value = type
+  try {
+    const response = await apiClient.cancelAggregation(type)
+    if (response.success) {
+      await loadData()
+    } else {
+      error.value = response.error
+    }
+  } catch {
+    error.value = 'Failed to cancel aggregation'
+  } finally {
+    cancellingWindow.value = null
+  }
+}
+
 onMounted(() => {
   loadData()
   refreshInterval = setInterval(loadData, 5000) // Refresh every 5 seconds
@@ -210,14 +228,60 @@ onUnmounted(() => {
         <!-- Aggregation Status -->
         <div class="bg-white rounded-lg shadow p-6">
           <h3 class="text-lg font-semibold mb-4">Aggregation Windows</h3>
-          <div v-if="aggregationStatus" class="space-y-2">
-            <div class="flex justify-between">
+          <div v-if="aggregationStatus" class="space-y-3">
+            <div class="flex justify-between items-center">
               <span class="text-gray-600">Movies:</span>
-              <span class="font-medium">{{ aggregationStatus.movies.count }} pending ({{ aggregationStatus.movies.windowDurationMinutes }}min)</span>
+              <div class="flex items-center gap-2">
+                <span class="font-medium">{{ aggregationStatus.movies.count }} pending</span>
+                <button
+                  v-if="aggregationStatus.movies.count > 0"
+                  @click="cancelAggregation('movies')"
+                  :disabled="cancellingWindow === 'movies'"
+                  class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                >
+                  {{ cancellingWindow === 'movies' ? '...' : 'Cancel' }}
+                </button>
+              </div>
             </div>
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <span class="text-gray-600">Series:</span>
-              <span class="font-medium">{{ aggregationStatus.series.count }} pending ({{ aggregationStatus.series.windowDurationMinutes }}min)</span>
+              <div class="flex items-center gap-2">
+                <span class="font-medium">{{ aggregationStatus.series.count }} pending</span>
+                <button
+                  v-if="aggregationStatus.series.count > 0"
+                  @click="cancelAggregation('series')"
+                  :disabled="cancellingWindow === 'series'"
+                  class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                >
+                  {{ cancellingWindow === 'series' ? '...' : 'Cancel' }}
+                </button>
+              </div>
+            </div>
+            <div v-if="aggregationStatus.moviesRemoved.count > 0" class="flex justify-between items-center">
+              <span class="text-gray-600">Movies Removed:</span>
+              <div class="flex items-center gap-2">
+                <span class="font-medium">{{ aggregationStatus.moviesRemoved.count }} pending</span>
+                <button
+                  @click="cancelAggregation('movies-removed')"
+                  :disabled="cancellingWindow === 'movies-removed'"
+                  class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                >
+                  {{ cancellingWindow === 'movies-removed' ? '...' : 'Cancel' }}
+                </button>
+              </div>
+            </div>
+            <div v-if="aggregationStatus.seriesRemoved.count > 0" class="flex justify-between items-center">
+              <span class="text-gray-600">Series Removed:</span>
+              <div class="flex items-center gap-2">
+                <span class="font-medium">{{ aggregationStatus.seriesRemoved.count }} pending</span>
+                <button
+                  @click="cancelAggregation('series-removed')"
+                  :disabled="cancellingWindow === 'series-removed'"
+                  class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                >
+                  {{ cancellingWindow === 'series-removed' ? '...' : 'Cancel' }}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -105,13 +105,14 @@ class JellyfinService {
 
   /**
    * Check if an item is likely an upgrade (re-import of existing media).
-   * An item is considered an upgrade if it was created more than 1 hour ago.
+   * An item is considered an upgrade if it was created 5 minutes ago or more.
+   * Only items created less than 5 minutes ago are considered truly new.
    *
    * @param itemId - The Jellyfin item ID
-   * @param thresholdMinutes - Minutes threshold to consider as upgrade (default: 60)
+   * @param thresholdMinutes - Minutes threshold to consider as upgrade (default: 5)
    * @returns true if upgrade, false if new, null if unable to determine
    */
-  async isUpgrade(itemId: string, thresholdMinutes = 60): Promise<boolean | null> {
+  async isUpgrade(itemId: string, thresholdMinutes = 5): Promise<boolean | null> {
     const itemInfo = await this.getItemInfo(itemId)
 
     if (!itemInfo) {
@@ -123,7 +124,8 @@ class JellyfinService {
     const ageMs = now.getTime() - itemInfo.dateCreated.getTime()
     const ageMinutes = ageMs / (1000 * 60)
 
-    const isUpgrade = ageMinutes > thresholdMinutes
+    // Items >= threshold are considered upgrades (not new)
+    const isUpgrade = ageMinutes >= thresholdMinutes
 
     if (isUpgrade) {
       logger.info('Jellyfin', `Item "${itemInfo.name}" detected as upgrade (created ${Math.round(ageMinutes)} min ago)`, {
