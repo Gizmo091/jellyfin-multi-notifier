@@ -52,17 +52,35 @@ npm run dev -w packages/admin
 
 ### Production (Docker)
 
-```bash
-# Copy environment file
-cp .env.example .env
+Le déploiement en production ne nécessite que 2 fichiers : `docker-compose.yml` et `.env`.
 
-# Edit .env with your configuration
+```bash
+# Créer un dossier pour le projet
+mkdir jellyfin-notifier && cd jellyfin-notifier
+
+# Télécharger docker-compose.yml
+curl -O https://raw.githubusercontent.com/Gizmo091/jellyfin-multi-notifier/main/docker-compose.yml
+
+# Télécharger le fichier .env d'exemple
+curl -O https://raw.githubusercontent.com/Gizmo091/jellyfin-multi-notifier/main/.env.example
+mv .env.example .env
+
+# Éditer .env avec votre configuration
 nano .env
 
-# Start with Docker Compose
-docker-compose up -d
+# Créer le dossier data pour la persistance
+mkdir data
 
-# Access the service at http://localhost:3000
+# Lancer le service
+docker compose up -d
+
+# Accéder à l'interface : http://localhost:3000
+```
+
+**Mise à jour** :
+```bash
+docker compose pull
+docker compose up -d
 ```
 
 ### First-time Setup
