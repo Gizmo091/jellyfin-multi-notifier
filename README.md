@@ -6,7 +6,7 @@ Autonomous service that monitors a Jellyfin media server and automatically notif
 
 - Receive and process Jellyfin webhook events (additions/deletions)
 - **Multi-platform notifications**: WhatsApp, Discord, and Telegram
-- Connect to WhatsApp via pairing code
+- Auto-connect WhatsApp on startup (QR code displayed in terminal and sent via alerts)
 - Intelligent notification aggregation (films and series separately)
 - Cover images from TMDB/IMDB with Jellyfin fallback (with composite patchwork for multiple items)
 - Direct links to content via redirect service
