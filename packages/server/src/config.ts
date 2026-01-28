@@ -10,6 +10,7 @@ export interface Config {
   nodeEnv: string
   adminPassword: string
   jellyfinUrl: string
+  jellyfinApiKey: string
   webhookSecret: string
   whatsappPhoneNumber: string
   aggregationWindowMinutes: AggregationWindows
@@ -52,6 +53,7 @@ export const config: Config = {
   nodeEnv: getEnv('NODE_ENV', 'development'),
   adminPassword: getEnv('ADMIN_PASSWORD', 'changeme'),
   jellyfinUrl: getEnv('JELLYFIN_URL', 'http://localhost:8096'),
+  jellyfinApiKey: getEnv('JELLYFIN_API_KEY', ''),
   webhookSecret: getEnv('WEBHOOK_SECRET', ''),
   whatsappPhoneNumber: getEnv('WHATSAPP_PHONE_NUMBER', ''),
   aggregationWindowMinutes: {

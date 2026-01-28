@@ -4,6 +4,7 @@ import { config } from '../config.js'
 import { extractMediaEvent } from '../services/media-extractor.js'
 import { mediaStore } from '../services/media-store.js'
 import { aggregationService } from '../services/aggregation/index.js'
+import { jellyfinService } from '../services/jellyfin/index.js'
 import { logger } from '../services/logger/index.js'
 import type { ApiResponse, JellyfinWebhookPayload, MediaEvent } from '../types/index.js'
 
@@ -148,17 +149,34 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
         // Store the event for later reference
         mediaStore.addEvent(event)
 
-        // Add to aggregation window (added and removed events)
-        aggregationService.addMedia(event)
+        // For "added" events, check if this is an upgrade (re-import of existing media)
+        // Only check if Jellyfin API is configured
+        let isUpgrade = false
+        if (event.eventType === 'added' && jellyfinService.isConfigured()) {
+          const upgradeCheck = await jellyfinService.isUpgrade(event.jellyfinId)
+          if (upgradeCheck === true) {
+            isUpgrade = true
+            logger.info('Webhook', `Skipping upgrade notification for "${event.title}"`, {
+              eventId: event.id,
+              type: event.type,
+              title: event.title,
+              jellyfinId: event.jellyfinId,
+            })
+          }
+        }
 
-        logger.info('Webhook', 'Media event extracted and stored', {
-          eventId: event.id,
-          type: event.type,
-          title: event.title,
-          eventType: event.eventType,
-          coverUrl: event.coverUrl,
-          storeCount: mediaStore.getEventCount(),
-        })
+        // Add to aggregation window (skip if upgrade)
+        if (!isUpgrade) {
+          aggregationService.addMedia(event)
+          logger.info('Webhook', 'Media event extracted and stored', {
+            eventId: event.id,
+            type: event.type,
+            title: event.title,
+            eventType: event.eventType,
+            coverUrl: event.coverUrl,
+            storeCount: mediaStore.getEventCount(),
+          })
+        }
       } else {
         logger.debug('Webhook', 'Webhook not processed (unsupported type or missing data)', { notificationType: payload?.NotificationType })
       }

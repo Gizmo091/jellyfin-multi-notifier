@@ -129,6 +129,7 @@ docker compose up -d
 | `PORT` | Server port (default: 3000) | No |
 | `ADMIN_PASSWORD` | Admin UI password | Yes |
 | `JELLYFIN_URL` | Jellyfin server URL | Yes |
+| `JELLYFIN_API_KEY` | Jellyfin API key for upgrade detection (skips notifications for quality upgrades) | No |
 | `WEBHOOK_SECRET` | Shared secret for webhook validation | Yes |
 | `WHATSAPP_LOGIN_ON_STARTUP` | Auto-connect WhatsApp on startup (default: true) | No |
 | `WHATSAPP_PHONE_NUMBER` | Phone number for pairing code auth (international format without +). If empty, QR code is used. | No |
