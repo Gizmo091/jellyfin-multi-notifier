@@ -144,13 +144,12 @@ class CoverService {
     const CELL_WIDTH = 300
     const CELL_HEIGHT = 450
     const COLS = 2
-    const urls = coverUrls.slice(0, 4)
 
-    if (urls.length < 2) return null
+    if (coverUrls.length < 2) return null
 
     // Fetch all images in parallel
     const fetchResults = await Promise.allSettled(
-      urls.map(async (url) => {
+      coverUrls.map(async (url) => {
         const response = await fetch(url)
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const arrayBuffer = await response.arrayBuffer()
