@@ -137,43 +137,98 @@ class CoverService {
 
   /**
    * Create a composite patchwork image from multiple cover URLs.
-   * Layout: 2 columns, 1-2 rows (max 4 images). Each cell is 300x450.
+   * Smart layout:
+   * - 2 images: side by side
+   * - 3 images: 1 tall (2 rows) on left + 2 stacked on right
+   * - 4 images: 2x2 grid
+   * - 5 images: 1 tall (2 rows) on left + 2x2 on right
+   * - 6+ images: 2-column grid
    * Returns a JPEG Buffer, or null if fewer than 2 URLs or all fetches fail.
    */
   async createCompositeImage(coverUrls: string[]): Promise<Buffer | null> {
     const CELL_WIDTH = 300
     const CELL_HEIGHT = 450
-    const COLS = 2
 
     if (coverUrls.length < 2) return null
 
-    // Fetch all images in parallel
+    const count = coverUrls.length
+    const useSmartLayout = count === 3 || count === 5
+
+    // Fetch all images in parallel with appropriate sizes
     const fetchResults = await Promise.allSettled(
-      coverUrls.map(async (url) => {
+      coverUrls.map(async (url, index) => {
         const response = await fetch(url)
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const arrayBuffer = await response.arrayBuffer()
-        return sharp(Buffer.from(arrayBuffer))
-          .resize(CELL_WIDTH, CELL_HEIGHT, { fit: 'cover' })
-          .toBuffer()
+
+        // First image is tall (2 rows) for smart layout
+        const isTallImage = useSmartLayout && index === 0
+        const width = CELL_WIDTH
+        const height = isTallImage ? CELL_HEIGHT * 2 : CELL_HEIGHT
+
+        return {
+          buffer: await sharp(Buffer.from(arrayBuffer))
+            .resize(width, height, { fit: 'cover' })
+            .toBuffer(),
+          isTall: isTallImage,
+        }
       })
     )
 
-    const buffers = fetchResults
-      .filter((r): r is PromiseFulfilledResult<Buffer> => r.status === 'fulfilled')
+    const images = fetchResults
+      .filter((r): r is PromiseFulfilledResult<{ buffer: Buffer; isTall: boolean }> => r.status === 'fulfilled')
       .map((r) => r.value)
 
-    if (buffers.length < 2) return null
+    if (images.length < 2) return null
 
-    const rows = Math.ceil(buffers.length / COLS)
-    const canvasWidth = COLS * CELL_WIDTH
-    const canvasHeight = rows * CELL_HEIGHT
+    // Recalculate if we lost images due to fetch failures
+    const actualCount = images.length
+    const actualSmartLayout = (actualCount === 3 || actualCount === 5) && images[0]?.isTall
 
-    const compositeInputs = buffers.map((buf, i) => ({
-      input: buf,
-      left: (i % COLS) * CELL_WIDTH,
-      top: Math.floor(i / COLS) * CELL_HEIGHT,
-    }))
+    let canvasWidth: number
+    let canvasHeight: number
+    let compositeInputs: Array<{ input: Buffer; left: number; top: number }>
+
+    if (actualSmartLayout) {
+      // Smart layout: 1 tall image + grid on right
+      // Layout for 3: [tall][2]    Layout for 5: [tall][2][3]
+      //               [   ][3]                   [   ][4][5]
+      const rightColCount = actualCount - 1
+      const rightCols = Math.min(2, rightColCount)
+      const rightRows = Math.ceil(rightColCount / rightCols)
+
+      canvasWidth = CELL_WIDTH + rightCols * CELL_WIDTH
+      canvasHeight = Math.max(2, rightRows) * CELL_HEIGHT
+
+      compositeInputs = images.map((img, i) => {
+        if (i === 0) {
+          // First image: tall, on the left
+          return { input: img.buffer, left: 0, top: 0 }
+        } else {
+          // Other images: grid on the right
+          const gridIndex = i - 1
+          const col = gridIndex % rightCols
+          const row = Math.floor(gridIndex / rightCols)
+          return {
+            input: img.buffer,
+            left: CELL_WIDTH + col * CELL_WIDTH,
+            top: row * CELL_HEIGHT,
+          }
+        }
+      })
+    } else {
+      // Standard 2-column grid
+      const COLS = 2
+      const rows = Math.ceil(actualCount / COLS)
+      canvasWidth = COLS * CELL_WIDTH
+      canvasHeight = rows * CELL_HEIGHT
+
+      compositeInputs = images.map((img, i) => ({
+        input: img.buffer,
+        left: (i % COLS) * CELL_WIDTH,
+        top: Math.floor(i / COLS) * CELL_HEIGHT,
+      }))
+    }
 
     try {
       const result = await sharp({
@@ -188,7 +243,7 @@ class CoverService {
         .jpeg({ quality: 85 })
         .toBuffer()
 
-      console.log(`Created composite image: ${buffers.length} covers, ${canvasWidth}x${canvasHeight}`)
+      console.log(`Created composite image: ${images.length} covers, ${canvasWidth}x${canvasHeight}, layout: ${actualSmartLayout ? 'smart' : 'grid'}`)
       return result
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
