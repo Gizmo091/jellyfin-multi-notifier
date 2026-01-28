@@ -5,6 +5,7 @@ import { extractMediaEvent } from '../services/media-extractor.js'
 import { mediaStore } from '../services/media-store.js'
 import { aggregationService } from '../services/aggregation/index.js'
 import { jellyfinService } from '../services/jellyfin/index.js'
+import { notifiedMediaService } from '../services/notified-media/index.js'
 import { logger } from '../services/logger/index.js'
 import type { ApiResponse, JellyfinWebhookPayload, MediaEvent } from '../types/index.js'
 
@@ -149,6 +150,26 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
         // Store the event for later reference
         mediaStore.addEvent(event)
 
+        // Check if this media has already been notified
+        const alreadyNotified = notifiedMediaService.isNotified(event.jellyfinId, event.eventType)
+        if (alreadyNotified) {
+          logger.info('Webhook', `Skipping already notified "${event.title}"`, {
+            eventId: event.id,
+            type: event.type,
+            title: event.title,
+            jellyfinId: event.jellyfinId,
+            eventType: event.eventType,
+          })
+          return {
+            success: true,
+            data: {
+              received: true,
+              timestamp: new Date().toISOString(),
+              event,
+            },
+          }
+        }
+
         // For "added" events, check if this is an upgrade (re-import of existing media)
         // Only check if Jellyfin API is configured
         let isUpgrade = false
@@ -156,6 +177,8 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
           const upgradeCheck = await jellyfinService.isUpgrade(event.jellyfinId)
           if (upgradeCheck === true) {
             isUpgrade = true
+            // Mark as notified so we don't check again
+            notifiedMediaService.markNotified(event.jellyfinId, event.eventType, event.title)
             logger.info('Webhook', `Skipping upgrade notification for "${event.title}"`, {
               eventId: event.id,
               type: event.type,

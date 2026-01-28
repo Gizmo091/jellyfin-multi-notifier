@@ -6,6 +6,7 @@ import { statusService } from '../status/index.js'
 import { settingsService } from '../settings/index.js'
 import { messageFormatter } from '../message-formatter/index.js'
 import { coverService } from '../cover/index.js'
+import { notifiedMediaService } from '../notified-media/index.js'
 import { logger } from '../logger/index.js'
 import { getSender } from '../senders/index.js'
 
@@ -174,6 +175,18 @@ class NotificationService {
 
         statusService.recordNotification(notificationType, items.length, result.success)
       }
+    }
+
+    // Mark items as notified if at least one channel succeeded
+    if (anySuccess) {
+      const eventType = type.includes('removed') ? 'removed' : 'added'
+      notifiedMediaService.markManyNotified(
+        items.map(item => ({
+          jellyfinId: item.jellyfinId,
+          eventType: eventType as 'added' | 'removed',
+          title: item.title,
+        }))
+      )
     }
 
     return anySuccess
