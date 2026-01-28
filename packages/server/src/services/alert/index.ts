@@ -51,6 +51,11 @@ class AlertService {
       this.sendPairingCodeAlert(code)
     })
 
+    // Wire QR code image event
+    whatsappClient.on('qr-image', (imageBuffer: Buffer) => {
+      this.sendQRCodeAlert(imageBuffer)
+    })
+
     this.initialized = true
     console.log('AlertService initialized')
   }
@@ -264,6 +269,141 @@ To link your WhatsApp:
 Time: ${timestamp}
 Admin dashboard: ${config.publicUrl}
 `
+  }
+
+  /**
+   * Send QR code alert with image to all configured channels.
+   * Called when a new WhatsApp QR code is generated.
+   */
+  async sendQRCodeAlert(imageBuffer: Buffer): Promise<AlertResult[]> {
+    const timestamp = new Date().toISOString()
+    const subject = '[Jellyfin Notifier] WhatsApp QR Code'
+    const message = `WhatsApp QR Code
+
+Scan this QR code to link WhatsApp:
+1. Open WhatsApp on your phone
+2. Go to Settings > Linked Devices
+3. Tap "Link a Device"
+4. Scan the QR code
+
+Time: ${timestamp}
+Admin dashboard: ${config.publicUrl}`
+
+    console.log('AlertService: Sending QR code alerts')
+
+    // Send to all channels in parallel, don't fail if one fails (NFR12)
+    const results = await Promise.allSettled([
+      this.sendEmailWithImage(subject, message, imageBuffer),
+      this.sendTelegramWithImage(message, imageBuffer),
+      this.sendDiscordWithImage(subject, message, imageBuffer),
+    ])
+
+    const alertResults: AlertResult[] = [
+      this.processResult(results[0], 'email'),
+      this.processResult(results[1], 'telegram'),
+      this.processResult(results[2], 'discord'),
+    ]
+
+    // Log results
+    for (const result of alertResults) {
+      if (result.success) {
+        console.log(`AlertService: ${result.channel} QR code alert sent successfully`)
+      } else if (result.error !== 'Not configured') {
+        console.error(`AlertService: ${result.channel} QR code alert failed: ${result.error}`)
+      }
+    }
+
+    return alertResults
+  }
+
+  /**
+   * Send email with image attachment.
+   */
+  private async sendEmailWithImage(subject: string, message: string, imageBuffer: Buffer): Promise<void> {
+    if (!this.emailTransporter || !config.alertEmail) {
+      throw new Error('Not configured')
+    }
+
+    await this.emailTransporter.sendMail({
+      from: config.smtpUser,
+      to: config.alertEmail,
+      subject,
+      text: message,
+      attachments: [
+        {
+          filename: 'whatsapp-qr.png',
+          content: imageBuffer,
+          cid: 'qrcode',
+        },
+      ],
+      html: `<p>${message.replace(/\n/g, '<br>')}</p><img src="cid:qrcode" alt="QR Code" />`,
+    })
+  }
+
+  /**
+   * Send Telegram message with image.
+   */
+  private async sendTelegramWithImage(caption: string, imageBuffer: Buffer): Promise<void> {
+    if (!config.telegramBotToken || !config.telegramChatId) {
+      throw new Error('Not configured')
+    }
+
+    const url = `https://api.telegram.org/bot${config.telegramBotToken}/sendPhoto`
+
+    // Use FormData for multipart upload
+    const formData = new FormData()
+    formData.append('chat_id', config.telegramChatId)
+    formData.append('caption', caption)
+    formData.append('photo', new Blob([imageBuffer], { type: 'image/png' }), 'qrcode.png')
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`Telegram API error: ${error}`)
+    }
+  }
+
+  /**
+   * Send Discord message with image.
+   */
+  private async sendDiscordWithImage(title: string, message: string, imageBuffer: Buffer): Promise<void> {
+    if (!config.discordWebhookUrl) {
+      throw new Error('Not configured')
+    }
+
+    // Use FormData for multipart upload with embed
+    const formData = new FormData()
+
+    const payload = {
+      embeds: [
+        {
+          title,
+          description: message,
+          color: 3447003, // Blue color
+          timestamp: new Date().toISOString(),
+          image: {
+            url: 'attachment://qrcode.png',
+          },
+        },
+      ],
+    }
+
+    formData.append('payload_json', JSON.stringify(payload))
+    formData.append('files[0]', new Blob([imageBuffer], { type: 'image/png' }), 'qrcode.png')
+
+    const response = await fetch(config.discordWebhookUrl, {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`Discord webhook error: ${error}`)
+    }
   }
 
   /**

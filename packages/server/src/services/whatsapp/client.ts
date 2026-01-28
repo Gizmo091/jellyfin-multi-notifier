@@ -9,6 +9,7 @@ import pino from 'pino'
 import path from 'path'
 import fs from 'fs'
 import { EventEmitter } from 'events'
+import QRCode from 'qrcode'
 import { logger } from '../logger/index.js'
 
 const SESSION_PATH = path.join(process.cwd(), 'data', 'whatsapp-session')
@@ -121,8 +122,29 @@ class WhatsAppClient extends EventEmitter {
           } else if (!this.pendingPhoneNumber) {
             // Only use QR code if no phone number configured
             this.status.qrCode = qr
-            console.log('New QR code generated - scan with WhatsApp')
-            this.emit('qr', qr)
+
+            // Print QR code in terminal
+            console.log('\n' + '═'.repeat(50))
+            console.log('Scan this QR code with WhatsApp:')
+            console.log('WhatsApp > Linked Devices > Link a Device')
+            console.log('═'.repeat(50))
+            try {
+              const terminalQR = await QRCode.toString(qr, { type: 'terminal', small: true })
+              console.log(terminalQR)
+            } catch (err) {
+              console.log('(QR code available in admin UI)')
+            }
+            console.log('═'.repeat(50) + '\n')
+
+            // Generate PNG buffer for notifications
+            try {
+              const qrImageBuffer = await QRCode.toBuffer(qr, { width: 300, margin: 2 })
+              this.emit('qr', qr)
+              this.emit('qr-image', qrImageBuffer)
+            } catch (err) {
+              logger.error('WhatsApp', 'Failed to generate QR image', { error: err })
+              this.emit('qr', qr)
+            }
           }
           // If pairing code already requested, ignore subsequent QR events
         }
