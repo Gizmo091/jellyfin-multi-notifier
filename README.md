@@ -130,7 +130,8 @@ docker compose up -d
 | `ADMIN_PASSWORD` | Admin UI password | Yes |
 | `JELLYFIN_URL` | Jellyfin server URL | Yes |
 | `WEBHOOK_SECRET` | Shared secret for webhook validation | Yes |
-| `WHATSAPP_PHONE_NUMBER` | Phone number for auto-connect (international format without +) | No |
+| `WHATSAPP_LOGIN_ON_STARTUP` | Auto-connect WhatsApp on startup (default: true) | No |
+| `WHATSAPP_PHONE_NUMBER` | Phone number for pairing code auth (international format without +). If empty, QR code is used. | No |
 | `TMDB_API_KEY` | TMDB API key for covers | No |
 | `PUBLIC_URL` | Public URL for redirect links (default: http://localhost:3000) | No |
 | `AGGREGATION_WINDOW_MINUTES` | Default aggregation window in minutes (default: 15) | No |

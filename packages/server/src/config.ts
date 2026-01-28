@@ -24,6 +24,7 @@ export interface Config {
   discordWebhookUrl: string
   tmdbApiKey: string
   jellyfinDeepLinkEnabled: boolean
+  whatsappLoginOnStartup: boolean
 }
 
 function getEnv(key: string, defaultValue = ''): string {
@@ -71,4 +72,6 @@ export const config: Config = {
   tmdbApiKey: getEnv('TMDB_API_KEY', ''),
   // Deep link disabled by default - Jellyfin iOS/Android apps don't fully support item navigation via URL
   jellyfinDeepLinkEnabled: getEnvBoolean('JELLYFIN_DEEP_LINK_ENABLED', false),
+  // Auto-connect WhatsApp on startup (default: true)
+  whatsappLoginOnStartup: getEnvBoolean('WHATSAPP_LOGIN_ON_STARTUP', true),
 }
