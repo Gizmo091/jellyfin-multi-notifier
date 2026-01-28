@@ -4,6 +4,7 @@ import { config } from '../config.js'
 import { extractMediaEvent } from '../services/media-extractor.js'
 import { mediaStore } from '../services/media-store.js'
 import { aggregationService } from '../services/aggregation/index.js'
+import { logger } from '../services/logger/index.js'
 import type { ApiResponse, JellyfinWebhookPayload, MediaEvent } from '../types/index.js'
 
 // Webhook response types
@@ -39,6 +40,33 @@ function validateWebhookSecret(headerValue: string | string[] | undefined): bool
 }
 
 export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
+  // Jellyfin's webhook plugin may send with content-type text/plain or other non-JSON types.
+  // Add parsers so Fastify can handle these as JSON.
+  fastify.addContentTypeParser(
+    ['text/plain', 'text/*', 'application/x-www-form-urlencoded'],
+    { parseAs: 'string' },
+    (_request, body, done) => {
+      try {
+        const json = JSON.parse(body as string)
+        done(null, json)
+      } catch (err) {
+        done(err as Error, undefined)
+      }
+    }
+  )
+
+  // If the body arrives as a string (edge case), try to parse it as JSON before validation
+  fastify.addHook('preValidation', async (request: FastifyRequest) => {
+    if (typeof request.body === 'string') {
+      try {
+        request.body = JSON.parse(request.body)
+        logger.debug('Webhook', 'Parsed string body as JSON')
+      } catch {
+        logger.warn('Webhook', 'Failed to parse string body as JSON', { body: (request.body as string).substring(0, 200) })
+      }
+    }
+  })
+
   // Pre-handler hook for secret validation on all routes in this plugin
   fastify.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     const secret = request.headers['x-webhook-secret']
@@ -111,10 +139,7 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
       const payload = request.body
 
       // Log the webhook receipt
-      fastify.log.info({
-        msg: 'Webhook received from Jellyfin',
-        notificationType: payload?.NotificationType,
-      })
+      logger.info('Webhook', 'Webhook received from Jellyfin', { notificationType: payload?.NotificationType })
 
       // Extract media event from payload
       const event = extractMediaEvent(payload)
@@ -123,13 +148,10 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
         // Store the event for later reference
         mediaStore.addEvent(event)
 
-        // Add to aggregation window if it's an addition event
-        if (event.eventType === 'added') {
-          aggregationService.addMedia(event)
-        }
+        // Add to aggregation window (added and removed events)
+        aggregationService.addMedia(event)
 
-        fastify.log.info({
-          msg: 'Media event extracted and stored',
+        logger.info('Webhook', 'Media event extracted and stored', {
           eventId: event.id,
           type: event.type,
           title: event.title,
@@ -138,10 +160,7 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
           storeCount: mediaStore.getEventCount(),
         })
       } else {
-        fastify.log.debug({
-          msg: 'Webhook not processed (unsupported type or missing data)',
-          notificationType: payload?.NotificationType,
-        })
+        logger.debug('Webhook', 'Webhook not processed (unsupported type or missing data)', { notificationType: payload?.NotificationType })
       }
 
       return {

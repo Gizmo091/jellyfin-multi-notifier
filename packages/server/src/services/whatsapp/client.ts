@@ -9,6 +9,7 @@ import pino from 'pino'
 import path from 'path'
 import fs from 'fs'
 import { EventEmitter } from 'events'
+import { logger } from '../logger/index.js'
 
 const SESSION_PATH = path.join(process.cwd(), 'data', 'whatsapp-session')
 
@@ -111,11 +112,11 @@ class WhatsAppClient extends EventEmitter {
           this.status.disconnectReason = reason
           this.status.isReconnecting = false
 
-          console.log(`WhatsApp disconnected: ${reason}`)
+          logger.warn('WhatsApp', `Disconnected: ${reason}`, { statusCode, reason })
 
           if (statusCode === DisconnectReason.loggedOut) {
             // Session invalidated, need new pairing
-            console.log('WhatsApp logged out - session invalidated. Need to re-pair.')
+            logger.warn('WhatsApp', 'Logged out - session invalidated. Need to re-pair.')
             this.status.error = 'Logged out from WhatsApp. Please reconnect with a new pairing code.'
             this.emit('logged-out')
             this.emit('disconnected', { reason, permanent: true })
@@ -155,7 +156,7 @@ class WhatsAppClient extends EventEmitter {
           this.status.isReconnecting = false
           this.reconnectAttempts = 0
           this.isConnecting = false
-          console.log(`WhatsApp connected successfully as ${this.status.phoneNumber}`)
+          logger.info('WhatsApp', `Connected successfully as ${this.status.phoneNumber}`, { phoneNumber: this.status.phoneNumber })
           this.emit('connected', { phoneNumber: this.status.phoneNumber })
         }
       })
@@ -264,7 +265,7 @@ class WhatsAppClient extends EventEmitter {
    */
   async sendTextMessage(jid: string, text: string): Promise<boolean> {
     if (!this.isConnected() || !this.socket) {
-      console.error('Cannot send message: WhatsApp not connected')
+      logger.error('WhatsApp', 'Cannot send message: WhatsApp not connected')
       this.emit('message-failed', { jid, text, error: 'Not connected' })
       return false
     }
@@ -278,12 +279,12 @@ class WhatsAppClient extends EventEmitter {
 
     try {
       const result = await this.socket.sendMessage(targetJid, { text })
-      console.log(`Message sent to ${targetJid}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`)
+      logger.info('WhatsApp', `Message sent to ${targetJid}`, { jid: targetJid, preview: text.substring(0, 50), messageId: result?.key?.id })
       this.emit('message-sent', { jid: targetJid, text, messageId: result?.key?.id })
       return true
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      console.error(`Failed to send message to ${targetJid}:`, errorMessage)
+      logger.error('WhatsApp', `Failed to send message to ${targetJid}`, { jid: targetJid, error: errorMessage })
       this.emit('message-failed', { jid: targetJid, text, error: errorMessage })
       return false
     }
@@ -293,19 +294,19 @@ class WhatsAppClient extends EventEmitter {
    * Sends an image message with optional caption to a WhatsApp group or individual chat.
    *
    * @param jid - The WhatsApp JID (group: xxx@g.us, individual: xxx@s.whatsapp.net)
-   * @param imageUrl - URL of the image to send
+   * @param imageSource - URL of the image to send, or a Buffer containing the image data
    * @param caption - Optional caption for the image
    * @param fallbackToText - If true, sends caption as text if image fetch fails (default: true)
    * @returns true if message was sent successfully, false otherwise
    */
   async sendImageMessage(
     jid: string,
-    imageUrl: string,
+    imageSource: string | Buffer,
     caption?: string,
     fallbackToText = true
   ): Promise<boolean> {
     if (!this.isConnected() || !this.socket) {
-      console.error('Cannot send image: WhatsApp not connected')
+      logger.error('WhatsApp', 'Cannot send image: WhatsApp not connected')
       this.emit('message-failed', { jid, type: 'image', error: 'Not connected' })
       return false
     }
@@ -317,19 +318,25 @@ class WhatsAppClient extends EventEmitter {
     }
 
     try {
-      // Fetch image from URL
-      const response = await fetch(imageUrl)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: HTTP ${response.status}`)
-      }
+      let buffer: Buffer
 
-      const contentType = response.headers.get('content-type')
-      if (!contentType || !contentType.startsWith('image/')) {
-        throw new Error(`Invalid content type: ${contentType}`)
-      }
+      if (Buffer.isBuffer(imageSource)) {
+        buffer = imageSource
+      } else {
+        // Fetch image from URL
+        const response = await fetch(imageSource)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: HTTP ${response.status}`)
+        }
 
-      const arrayBuffer = await response.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
+        const contentType = response.headers.get('content-type')
+        if (!contentType || !contentType.startsWith('image/')) {
+          throw new Error(`Invalid content type: ${contentType}`)
+        }
+
+        const arrayBuffer = await response.arrayBuffer()
+        buffer = Buffer.from(arrayBuffer)
+      }
 
       // Send image via WhatsApp
       const result = await this.socket.sendMessage(targetJid, {
@@ -337,16 +344,16 @@ class WhatsAppClient extends EventEmitter {
         caption: caption || undefined,
       })
 
-      console.log(`Image sent to ${targetJid}${caption ? ` with caption: "${caption.substring(0, 30)}${caption.length > 30 ? '...' : ''}"` : ''}`)
+      logger.info('WhatsApp', `Image sent to ${targetJid}`, { jid: targetJid, hasCaption: !!caption, messageId: result?.key?.id })
       this.emit('message-sent', { jid: targetJid, type: 'image', caption, messageId: result?.key?.id })
       return true
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      console.error(`Failed to send image to ${targetJid}:`, errorMessage)
+      logger.error('WhatsApp', `Failed to send image to ${targetJid}`, { jid: targetJid, error: errorMessage })
 
       // Fallback to text message if enabled and caption provided
       if (fallbackToText && caption) {
-        console.log(`Falling back to text message for ${targetJid}`)
+        logger.info('WhatsApp', `Falling back to text message for ${targetJid}`)
         const textSent = await this.sendTextMessage(targetJid, caption)
         if (textSent) {
           this.emit('message-fallback', { jid: targetJid, originalType: 'image', fallbackType: 'text' })

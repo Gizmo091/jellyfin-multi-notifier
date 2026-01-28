@@ -1,20 +1,30 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { apiClient, type QueueStatus } from '../api/client'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { apiClient, type QueueStatus, type AggregationStatus } from '../api/client'
 
 const loading = ref(true)
 const error = ref<string | null>(null)
 const queueStatus = ref<QueueStatus | null>(null)
+const aggregation = ref<AggregationStatus | null>(null)
+const flushing = ref(false)
+const now = ref(Date.now())
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+let countdownInterval: ReturnType<typeof setInterval> | null = null
 
-async function loadQueue() {
+async function loadData() {
   try {
-    const response = await apiClient.getQueue()
-    if (response.success) {
-      queueStatus.value = response.data
+    const [queueResponse, aggResponse] = await Promise.all([
+      apiClient.getQueue(),
+      apiClient.getAggregation(),
+    ])
+    if (queueResponse.success) {
+      queueStatus.value = queueResponse.data
     } else {
-      error.value = response.error
+      error.value = queueResponse.error
+    }
+    if (aggResponse.success) {
+      aggregation.value = aggResponse.data
     }
   } catch {
     error.value = 'Failed to load queue'
@@ -23,19 +33,47 @@ async function loadQueue() {
   }
 }
 
+async function flushAggregation() {
+  flushing.value = true
+  try {
+    await apiClient.flushAggregation()
+    await loadData()
+  } catch {
+    error.value = 'Failed to flush aggregation'
+  } finally {
+    flushing.value = false
+  }
+}
+
+function formatCountdown(windowStart: string, windowDurationMinutes: number): string {
+  const endMs = new Date(windowStart).getTime() + windowDurationMinutes * 60000
+  const remainingMs = endMs - now.value
+  if (remainingMs <= 0) return 'Flushing...'
+  const totalSeconds = Math.ceil(remainingMs / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+const hasAggregationItems = computed(() => {
+  if (!aggregation.value) return false
+  const a = aggregation.value
+  return a.movies.count > 0 || a.series.count > 0 || a.moviesRemoved.count > 0 || a.seriesRemoved.count > 0
+})
+
 function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleString()
 }
 
 onMounted(() => {
-  loadQueue()
-  refreshInterval = setInterval(loadQueue, 5000)
+  loadData()
+  refreshInterval = setInterval(loadData, 5000)
+  countdownInterval = setInterval(() => { now.value = Date.now() }, 1000)
 })
 
 onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
+  if (refreshInterval) clearInterval(refreshInterval)
+  if (countdownInterval) clearInterval(countdownInterval)
 })
 </script>
 
@@ -50,6 +88,82 @@ onUnmounted(() => {
     </div>
 
     <div v-else-if="queueStatus" class="space-y-6">
+      <!-- Pending Notifications (Aggregation) -->
+      <div v-if="hasAggregationItems" class="bg-white rounded-lg shadow p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">Pending Notifications</h3>
+          <button
+            @click="flushAggregation"
+            :disabled="flushing"
+            class="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            {{ flushing ? 'Flushing...' : 'Flush Now' }}
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Movies window -->
+          <div v-if="aggregation && aggregation.movies.count > 0" class="border border-blue-200 rounded-lg p-4 bg-blue-50">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-medium text-blue-800">Movies ({{ aggregation.movies.count }})</span>
+              <span v-if="aggregation.movies.windowStart" class="text-sm font-mono text-blue-600">
+                {{ formatCountdown(aggregation.movies.windowStart, aggregation.windowDurationMinutes) }}
+              </span>
+            </div>
+            <ul class="text-sm text-blue-700 space-y-1">
+              <li v-for="(item, idx) in aggregation.movies.items" :key="idx" class="truncate">
+                {{ item.title }}
+              </li>
+            </ul>
+          </div>
+
+          <!-- Series window -->
+          <div v-if="aggregation && aggregation.series.count > 0" class="border border-purple-200 rounded-lg p-4 bg-purple-50">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-medium text-purple-800">Series ({{ aggregation.series.count }})</span>
+              <span v-if="aggregation.series.windowStart" class="text-sm font-mono text-purple-600">
+                {{ formatCountdown(aggregation.series.windowStart, aggregation.windowDurationMinutes) }}
+              </span>
+            </div>
+            <ul class="text-sm text-purple-700 space-y-1">
+              <li v-for="(item, idx) in aggregation.series.items" :key="idx" class="truncate">
+                {{ item.title }}
+              </li>
+            </ul>
+          </div>
+
+          <!-- Movies removed window -->
+          <div v-if="aggregation && aggregation.moviesRemoved.count > 0" class="border border-red-200 rounded-lg p-4 bg-red-50">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-medium text-red-800">Movies removed ({{ aggregation.moviesRemoved.count }})</span>
+              <span v-if="aggregation.moviesRemoved.windowStart" class="text-sm font-mono text-red-600">
+                {{ formatCountdown(aggregation.moviesRemoved.windowStart, aggregation.windowDurationMinutes) }}
+              </span>
+            </div>
+            <ul class="text-sm text-red-700 space-y-1">
+              <li v-for="(item, idx) in aggregation.moviesRemoved.items" :key="idx" class="truncate">
+                {{ item.title }}
+              </li>
+            </ul>
+          </div>
+
+          <!-- Series removed window -->
+          <div v-if="aggregation && aggregation.seriesRemoved.count > 0" class="border border-orange-200 rounded-lg p-4 bg-orange-50">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-medium text-orange-800">Series removed ({{ aggregation.seriesRemoved.count }})</span>
+              <span v-if="aggregation.seriesRemoved.windowStart" class="text-sm font-mono text-orange-600">
+                {{ formatCountdown(aggregation.seriesRemoved.windowStart, aggregation.windowDurationMinutes) }}
+              </span>
+            </div>
+            <ul class="text-sm text-orange-700 space-y-1">
+              <li v-for="(item, idx) in aggregation.seriesRemoved.items" :key="idx" class="truncate">
+                {{ item.title }}
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <!-- Queue Stats -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div class="bg-white rounded-lg shadow p-4">

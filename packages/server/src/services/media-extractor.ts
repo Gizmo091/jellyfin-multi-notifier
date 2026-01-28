@@ -35,6 +35,36 @@ function mapJellyfinType(jellyfinType?: string): MediaType {
 }
 
 /**
+ * Decodes HTML entities in text.
+ * Handles numeric (decimal & hex) and common named entities.
+ */
+function decodeHtmlEntities(text: string): string {
+  const namedEntities: Record<string, string> = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&apos;': "'",
+    '&#39;': "'",
+    '&nbsp;': '\u00A0',
+  }
+
+  // Replace named entities
+  let result = text
+  for (const [entity, char] of Object.entries(namedEntities)) {
+    result = result.replaceAll(entity, char)
+  }
+
+  // Replace numeric decimal entities: &#201; -> É
+  result = result.replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+
+  // Replace numeric hex entities: &#xC9; -> É
+  result = result.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+
+  return result
+}
+
+/**
  * Formats the title based on item type.
  * For episodes: "Series Name S01E02 - Episode Name"
  * For movies/series: Just the name
@@ -43,11 +73,11 @@ function formatTitle(item: JellyfinItem): string {
   if (item.Type?.toLowerCase() === 'episode' && item.SeriesName) {
     const season = item.ParentIndexNumber?.toString().padStart(2, '0') ?? '??'
     const episode = item.IndexNumber?.toString().padStart(2, '0') ?? '??'
-    const episodeName = item.Name ? ` - ${item.Name}` : ''
-    return `${item.SeriesName} S${season}E${episode}${episodeName}`
+    const episodeName = item.Name ? ` - ${decodeHtmlEntities(item.Name)}` : ''
+    return `${decodeHtmlEntities(item.SeriesName)} S${season}E${episode}${episodeName}`
   }
 
-  return item.Name ?? 'Unknown'
+  return item.Name ? decodeHtmlEntities(item.Name) : 'Unknown'
 }
 
 /**

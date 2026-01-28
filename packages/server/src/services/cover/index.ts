@@ -1,3 +1,4 @@
+import sharp from 'sharp'
 import { config } from '../../config.js'
 import { MediaEvent } from '../../types/index.js'
 
@@ -111,6 +112,69 @@ class CoverService {
       })
     )
     return enhanced
+  }
+
+  /**
+   * Create a composite patchwork image from multiple cover URLs.
+   * Layout: 2 columns, 1-2 rows (max 4 images). Each cell is 300x450.
+   * Returns a JPEG Buffer, or null if fewer than 2 URLs or all fetches fail.
+   */
+  async createCompositeImage(coverUrls: string[]): Promise<Buffer | null> {
+    const CELL_WIDTH = 300
+    const CELL_HEIGHT = 450
+    const COLS = 2
+    const urls = coverUrls.slice(0, 4)
+
+    if (urls.length < 2) return null
+
+    // Fetch all images in parallel
+    const fetchResults = await Promise.allSettled(
+      urls.map(async (url) => {
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const arrayBuffer = await response.arrayBuffer()
+        return sharp(Buffer.from(arrayBuffer))
+          .resize(CELL_WIDTH, CELL_HEIGHT, { fit: 'cover' })
+          .toBuffer()
+      })
+    )
+
+    const buffers = fetchResults
+      .filter((r): r is PromiseFulfilledResult<Buffer> => r.status === 'fulfilled')
+      .map((r) => r.value)
+
+    if (buffers.length < 2) return null
+
+    const rows = Math.ceil(buffers.length / COLS)
+    const canvasWidth = COLS * CELL_WIDTH
+    const canvasHeight = rows * CELL_HEIGHT
+
+    const compositeInputs = buffers.map((buf, i) => ({
+      input: buf,
+      left: (i % COLS) * CELL_WIDTH,
+      top: Math.floor(i / COLS) * CELL_HEIGHT,
+    }))
+
+    try {
+      const result = await sharp({
+        create: {
+          width: canvasWidth,
+          height: canvasHeight,
+          channels: 3,
+          background: { r: 0, g: 0, b: 0 },
+        },
+      })
+        .composite(compositeInputs)
+        .jpeg({ quality: 85 })
+        .toBuffer()
+
+      console.log(`Created composite image: ${buffers.length} covers, ${canvasWidth}x${canvasHeight}`)
+      return result
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('Failed to create composite image:', errorMessage)
+      return null
+    }
   }
 }
 

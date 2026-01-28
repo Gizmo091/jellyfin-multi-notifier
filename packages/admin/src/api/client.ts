@@ -61,17 +61,17 @@ export interface QueueStatus {
   }>
 }
 
+export interface AggregationWindowStatus {
+  count: number
+  windowStart: string | null
+  items: Array<{ title: string; type: string }>
+}
+
 export interface AggregationStatus {
-  movies: {
-    count: number
-    windowStart: string | null
-    items: Array<{ title: string; type: string }>
-  }
-  series: {
-    count: number
-    windowStart: string | null
-    items: Array<{ title: string; type: string }>
-  }
+  movies: AggregationWindowStatus
+  series: AggregationWindowStatus
+  moviesRemoved: AggregationWindowStatus
+  seriesRemoved: AggregationWindowStatus
   windowDurationMinutes: number
 }
 
@@ -81,9 +81,20 @@ export interface AlertChannels {
   discord: boolean
 }
 
+export type SupportedLanguage = 'fr' | 'en' | 'es' | 'de' | 'it' | 'pt'
+
+export interface WhatsAppGroupConfig {
+  id: string
+  groupId: string
+  groupName: string
+  language: SupportedLanguage
+}
+
 export interface ConfigStatus {
   jellyfinUrl: string
-  whatsappGroupId: string | null
+  whatsappGroupId: string | null // Deprecated
+  whatsappGroups: WhatsAppGroupConfig[]
+  supportedLanguages: { code: string; name: string }[]
   aggregationWindowMinutes: number
   publicUrl: string
   alerts: {
@@ -118,11 +129,50 @@ export interface AlertTestResult {
   error?: string
 }
 
+export interface WebhookConfig {
+  webhookUrl: string
+  webhookSecret: string
+  secretConfigured: boolean
+  template: string
+  notificationTypes: string[]
+}
+
+export interface TestWebhookResult {
+  event: {
+    id: string
+    type: string
+    title: string
+    year?: number
+    jellyfinId: string
+    eventType: string
+    timestamp: string
+  }
+  flushed: boolean
+}
+
 export interface NotificationRecord {
   timestamp: string
   type: 'movies' | 'series'
   count: number
   success: boolean
+}
+
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+export interface LogEntry {
+  id: number
+  timestamp: string
+  /** High-resolution timestamp in nanoseconds (as string) */
+  timestampNs?: string
+  level: LogLevel
+  category: string
+  message: string
+  data?: Record<string, unknown>
+}
+
+export interface LogsResponse {
+  logs: LogEntry[]
+  total: number
 }
 
 export interface ServiceStatus {
@@ -193,6 +243,7 @@ export const apiClient = {
   async flushAggregation(): Promise<ApiResponse<{ message: string }>> {
     return request<{ message: string }>('/aggregation/flush', {
       method: 'POST',
+      body: JSON.stringify({}),
     })
   },
 
@@ -222,6 +273,66 @@ export const apiClient = {
     return request<{ groupId: string }>('/config/whatsapp-group', {
       method: 'POST',
       body: JSON.stringify({ groupId }),
+    })
+  },
+
+  async getWebhookConfig(): Promise<ApiResponse<WebhookConfig>> {
+    return request<WebhookConfig>('/config/webhook')
+  },
+
+  async testWebhook(
+    type: 'movie' | 'series',
+    options?: { title?: string; year?: number; flushImmediately?: boolean }
+  ): Promise<ApiResponse<TestWebhookResult>> {
+    return request<TestWebhookResult>('/test/webhook', {
+      method: 'POST',
+      body: JSON.stringify({ type, ...options }),
+    })
+  },
+
+  async addWhatsAppGroup(
+    groupId: string,
+    groupName: string,
+    language: SupportedLanguage
+  ): Promise<ApiResponse<WhatsAppGroupConfig>> {
+    return request<WhatsAppGroupConfig>('/config/whatsapp-groups', {
+      method: 'POST',
+      body: JSON.stringify({ groupId, groupName, language }),
+    })
+  },
+
+  async updateWhatsAppGroup(
+    id: string,
+    updates: { groupName?: string; language?: SupportedLanguage }
+  ): Promise<ApiResponse<{ message: string }>> {
+    return request<{ message: string }>(`/config/whatsapp-groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    })
+  },
+
+  async removeWhatsAppGroup(id: string): Promise<ApiResponse<{ message: string }>> {
+    return request<{ message: string }>(`/config/whatsapp-groups/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async getLogs(options?: {
+    level?: LogLevel
+    category?: string
+    limit?: number
+  }): Promise<ApiResponse<LogsResponse>> {
+    const params = new URLSearchParams()
+    if (options?.level) params.append('level', options.level)
+    if (options?.category) params.append('category', options.category)
+    if (options?.limit) params.append('limit', options.limit.toString())
+    const query = params.toString()
+    return request<LogsResponse>(`/logs${query ? `?${query}` : ''}`)
+  },
+
+  async clearLogs(): Promise<ApiResponse<{ message: string }>> {
+    return request<{ message: string }>('/logs', {
+      method: 'DELETE',
     })
   },
 }
