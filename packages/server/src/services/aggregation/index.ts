@@ -1,7 +1,6 @@
 import { EventEmitter } from 'events'
 import { MediaEvent } from '../../types/index.js'
 import { config } from '../../config.js'
-import { coverService } from '../cover/index.js'
 import { redirectService } from '../redirect/index.js'
 import { logger } from '../logger/index.js'
 
@@ -109,11 +108,8 @@ class AggregationService extends EventEmitter {
 
     logger.info('Aggregation', `Flushing ${type} window with ${items.length} items`, { windowType: type, itemCount: items.length, titles: items.map(i => i.title) })
 
-    // Enhance items with high-quality covers
-    const withCovers = await coverService.enhanceWithCovers(items)
-
-    // Add redirect URLs for each item
-    const enhancedItems = withCovers.map((item) => ({
+    // Add redirect URLs for each item (covers will be fetched per-language in notification service)
+    const enhancedItems = items.map((item) => ({
       ...item,
       redirectUrl: redirectService.createRedirect(item.jellyfinId, item.title),
     }))

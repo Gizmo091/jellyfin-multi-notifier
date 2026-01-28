@@ -1,9 +1,19 @@
 import sharp from 'sharp'
 import { config } from '../../config.js'
-import { MediaEvent } from '../../types/index.js'
+import { MediaEvent, SupportedLanguage } from '../../types/index.js'
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500'
+
+// Map our supported languages to TMDB language codes
+const TMDB_LANGUAGE_MAP: Record<SupportedLanguage, string> = {
+  en: 'en-US',
+  fr: 'fr-FR',
+  es: 'es-ES',
+  de: 'de-DE',
+  it: 'it-IT',
+  pt: 'pt-BR',
+}
 
 interface TMDBSearchResult {
   results: Array<{
@@ -26,13 +36,15 @@ class CoverService {
   /**
    * Fetch the best available cover image for a media event.
    * Priority: TMDB > Jellyfin > null
+   * @param event The media event
+   * @param language Optional language for TMDB search (improves search accuracy and may return localized posters)
    */
-  async fetchCover(event: MediaEvent): Promise<string | null> {
+  async fetchCover(event: MediaEvent, language?: SupportedLanguage): Promise<string | null> {
     // Try TMDB first if API key is configured
     if (this.apiKey) {
-      const tmdbCover = await this.fetchFromTMDB(event)
+      const tmdbCover = await this.fetchFromTMDB(event, language)
       if (tmdbCover) {
-        console.log(`TMDB cover found for "${event.title}": ${tmdbCover}`)
+        console.log(`TMDB cover found for "${event.title}" (lang: ${language || 'default'}): ${tmdbCover}`)
         return tmdbCover
       }
     }
@@ -49,8 +61,10 @@ class CoverService {
 
   /**
    * Fetch cover image from TMDB API.
+   * @param event The media event
+   * @param language Optional language for search (affects results and may return localized posters)
    */
-  private async fetchFromTMDB(event: MediaEvent): Promise<string | null> {
+  private async fetchFromTMDB(event: MediaEvent, language?: SupportedLanguage): Promise<string | null> {
     try {
       const searchType = event.type === 'movie' ? 'movie' : 'tv'
 
@@ -68,6 +82,11 @@ class CoverService {
         api_key: this.apiKey,
         query,
       })
+
+      // Add language parameter if specified
+      if (language) {
+        params.set('language', TMDB_LANGUAGE_MAP[language])
+      }
 
       // Add year for movies to improve accuracy
       if (event.year && event.type === 'movie') {
@@ -88,7 +107,7 @@ class CoverService {
         return `${TMDB_IMAGE_BASE}${data.results[0].poster_path}`
       }
 
-      console.log(`No TMDB results for "${query}"`)
+      console.log(`No TMDB results for "${query}" (lang: ${language || 'default'})`)
       return null
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -100,11 +119,13 @@ class CoverService {
   /**
    * Enhance a list of media events with high-quality covers.
    * Fetches covers in parallel for efficiency.
+   * @param events The media events to enhance
+   * @param language Optional language for TMDB search
    */
-  async enhanceWithCovers(events: MediaEvent[]): Promise<MediaEvent[]> {
+  async enhanceWithCovers(events: MediaEvent[], language?: SupportedLanguage): Promise<MediaEvent[]> {
     const enhanced = await Promise.all(
       events.map(async (event) => {
-        const coverUrl = await this.fetchCover(event)
+        const coverUrl = await this.fetchCover(event, language)
         return {
           ...event,
           coverUrl: coverUrl || event.coverUrl,

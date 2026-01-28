@@ -98,7 +98,8 @@ class NotificationService {
 
   /**
    * Core method to send notifications to all enabled channels.
-   * Handles image preparation, language grouping, and per-channel dispatch.
+   * Handles image preparation per language, and per-channel dispatch.
+   * Fetches covers with the appropriate language for each channel group.
    */
   private async sendToAllChannels(
     type: 'movies' | 'series' | 'movies-removed' | 'series-removed',
@@ -110,31 +111,11 @@ class NotificationService {
       return false
     }
 
-    // Prepare image for non-removal notifications
-    let imageBuffer: Buffer | undefined
-    let imageUrl: string | undefined
-
-    if (type === 'movies' || type === 'series') {
-      const coverUrls = items.map((i) => i.coverUrl).filter((url): url is string => !!url)
-
-      if (coverUrls.length >= 2) {
-        const composite = await coverService.createCompositeImage(coverUrls)
-        if (composite) {
-          imageBuffer = composite
-          imageUrl = coverUrls[0] // Fallback URL for queue storage
-        } else {
-          imageUrl = coverUrls[0]
-        }
-      } else if (coverUrls.length === 1) {
-        imageUrl = coverUrls[0]
-      }
-    }
-
     const mediaType: MediaType = (type === 'movies' || type === 'movies-removed') ? 'movie' : 'series'
     const notificationType = mediaType === 'movie' ? 'movies' : 'series'
     let anySuccess = false
 
-    // Group channels by language for efficient formatting
+    // Group channels by language for efficient formatting and cover fetching
     const channelsByLanguage = new Map<SupportedLanguage, NotificationChannel[]>()
     for (const channel of channels) {
       const list = channelsByLanguage.get(channel.language) || []
@@ -143,6 +124,28 @@ class NotificationService {
     }
 
     for (const [language, langChannels] of channelsByLanguage) {
+      // Prepare image for non-removal notifications, fetched with the correct language
+      let imageBuffer: Buffer | undefined
+      let imageUrl: string | undefined
+
+      if (type === 'movies' || type === 'series') {
+        // Fetch covers with the channel's language for better search results and localized posters
+        const itemsWithCovers = await coverService.enhanceWithCovers(items, language)
+        const coverUrls = itemsWithCovers.map((i) => i.coverUrl).filter((url): url is string => !!url)
+
+        if (coverUrls.length >= 2) {
+          const composite = await coverService.createCompositeImage(coverUrls)
+          if (composite) {
+            imageBuffer = composite
+            imageUrl = coverUrls[0] // Fallback URL for queue storage
+          } else {
+            imageUrl = coverUrls[0]
+          }
+        } else if (coverUrls.length === 1) {
+          imageUrl = coverUrls[0]
+        }
+      }
+
       for (const channel of langChannels) {
         const { text } = messageFormatter.formatForPlatform(type, items, language, channel.channelType)
         const sender = getSender(channel.channelType)
