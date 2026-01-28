@@ -39,6 +39,13 @@ async function handleLogout() {
           >
             Queue
           </RouterLink>
+          <RouterLink
+            to="/logs"
+            class="hover:text-primary-200 transition-colors"
+            :class="{ 'text-primary-200': route.name === 'logs' }"
+          >
+            Logs
+          </RouterLink>
           <button
             @click="handleLogout"
             class="bg-primary-700 hover:bg-primary-800 px-3 py-1 rounded transition-colors"

@@ -1,24 +1,34 @@
-# Jellyfin WhatsApp Notifier
+# Jellyfin Media Notifier
 
-Autonomous service that monitors a Jellyfin media server and automatically notifies a WhatsApp group when new content is added or removed.
+Autonomous service that monitors a Jellyfin media server and automatically notifies multiple platforms (WhatsApp, Discord, Telegram) when new content is added or removed.
 
 ## Features
 
 - Receive and process Jellyfin webhook events (additions/deletions)
+- **Multi-platform notifications**: WhatsApp, Discord, and Telegram
 - Connect to WhatsApp via pairing code
 - Intelligent notification aggregation (films and series separately)
-- Cover images from TMDB/IMDB with Jellyfin fallback
+- Cover images from TMDB/IMDB with Jellyfin fallback (with composite patchwork for multiple items)
 - Direct links to content via redirect service
 - Persistent message queue with automatic retry
-- Multi-channel alerts (Email, Telegram, Discord)
+- Multi-channel admin alerts (Email, Telegram, Discord for connection status)
 - Admin web UI for configuration
+- Multi-language support (English, French, Spanish, German, Italian, Portuguese)
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js 20+
-- Docker and Docker Compose
+- Docker and Docker Compose (for production)
+
+### Architecture
+
+The project uses a monorepo structure with two packages:
+- `packages/server` - Fastify API backend
+- `packages/admin` - Vue 3 admin interface
+
+**In production**, the server serves both the API and the admin UI on a **single port** (default: 3000). No reverse proxy needed.
 
 ### Development
 
@@ -26,11 +36,18 @@ Autonomous service that monitors a Jellyfin media server and automatically notif
 # Install dependencies
 npm install
 
-# Start development server
-npm run dev
+# Option 1: Full build + run (recommended for testing)
+npm run build
+npm run start -w packages/server
+# Access everything at http://localhost:3000
 
-# Start admin UI development
-npm run dev:admin
+# Option 2: Development with hot-reload
+# Terminal 1: Start API server
+npm run dev -w packages/server
+
+# Terminal 2: Start admin UI with hot-reload (optional)
+npm run dev -w packages/admin
+# API at http://localhost:3000, Admin at http://localhost:5173
 ```
 
 ### Production (Docker)
@@ -44,16 +61,36 @@ nano .env
 
 # Start with Docker Compose
 docker-compose up -d
+
+# Access the service at http://localhost:3000
 ```
 
 ### First-time Setup
 
-1. Set `WHATSAPP_PHONE_NUMBER` in your `.env` file (international format without +, e.g., 33612345678)
-2. Start the service
-3. Pairing code will be sent to your configured alert channels (email, Discord, Telegram)
-4. On your phone: WhatsApp > Linked Devices > Link a Device
-5. Enter the pairing code
-6. Go to Configuration page in admin UI (http://localhost:3000) and select your target WhatsApp group
+1. Start the service
+2. Open the admin UI at **http://localhost:3000** (same URL for API and UI)
+3. Log in with your `ADMIN_PASSWORD`
+4. Navigate to the Configuration page
+5. Add notification channels:
+   - **WhatsApp**: Connect WhatsApp first (via pairing code), then select your target group
+   - **Discord**: Create a webhook URL in your Discord server and paste it
+   - **Telegram**: Create a bot with @BotFather, get the token, and find your chat ID
+6. Test each channel to verify it works
+7. Configure Jellyfin webhooks (see below)
+
+#### WhatsApp Setup
+- Set `WHATSAPP_PHONE_NUMBER` in your `.env` file (international format without +, e.g., 33612345678)
+- Pairing code will be sent to your configured alert channels (email, Discord, Telegram)
+- On your phone: WhatsApp > Linked Devices > Link a Device
+- Enter the pairing code
+
+#### Discord Setup
+- In your Discord server: Server Settings > Integrations > Webhooks > New Webhook
+- Copy the webhook URL and paste it when adding a Discord channel
+
+#### Telegram Setup
+- Create a bot with @BotFather and copy the token
+- Find your chat ID using @userinfobot or use @channelname for public channels
 
 ## Configuration
 
@@ -68,7 +105,11 @@ docker-compose up -d
 | `WHATSAPP_PHONE_NUMBER` | Phone number for auto-connect (international format without +) | No |
 | `TMDB_API_KEY` | TMDB API key for covers | No |
 | `PUBLIC_URL` | Public URL for redirect links (default: http://localhost:3000) | No |
-| `AGGREGATION_WINDOW_MINUTES` | Aggregation window duration (default: 15) | No |
+| `AGGREGATION_WINDOW_MINUTES` | Default aggregation window in minutes (default: 15) | No |
+| `AGGREGATION_WINDOW_MOVIES_MINUTES` | Aggregation window for movies added | No |
+| `AGGREGATION_WINDOW_SERIES_MINUTES` | Aggregation window for series added | No |
+| `AGGREGATION_WINDOW_MOVIES_REMOVED_MINUTES` | Aggregation window for movies removed | No |
+| `AGGREGATION_WINDOW_SERIES_REMOVED_MINUTES` | Aggregation window for series removed | No |
 
 ### Jellyfin Webhook Setup
 
@@ -83,12 +124,24 @@ docker-compose up -d
 ```
 jellyfin-whatsapp-notifier/
 ├── packages/
-│   ├── server/          # Fastify backend
+│   ├── server/          # Fastify backend (serves API + admin UI)
+│   │   ├── src/         # TypeScript source
+│   │   └── dist/        # Compiled JavaScript
 │   └── admin/           # Vue 3 admin UI
-├── data/                # Persistent data (Docker volume)
+│       ├── src/         # Vue source
+│       └── dist/        # Built static files (served by server)
+├── data/                # Persistent data (SQLite DB, WhatsApp session)
 ├── docker-compose.yml
 └── Dockerfile
 ```
+
+### Data Persistence
+
+The `data/` directory contains:
+- `queue.db` - SQLite database (message queue, settings, notification channels)
+- `whatsapp-session/` - WhatsApp authentication session
+
+**Important**: In Docker, this is mounted as a volume (`/app/data`). Back up this directory to preserve your configuration and WhatsApp session.
 
 ## API Endpoints
 
@@ -104,9 +157,15 @@ jellyfin-whatsapp-notifier/
 | `/api/redirects` | GET | List all redirect entries |
 | `/api/queue` | GET | View message queue status |
 | `/api/queue/pending` | GET | View pending messages |
-| `/api/alerts/status` | GET | View configured alert channels |
-| `/api/alerts/test` | POST | Send test alert to all channels |
+| `/api/alerts/status` | GET | View configured alert channels (admin alerts) |
+| `/api/alerts/test` | POST | Send test alert to all admin channels |
 | `/api/config` | GET | View current configuration |
+| `/api/config/notification-channels` | GET | List all notification channels |
+| `/api/config/notification-channels` | POST | Add a notification channel |
+| `/api/config/notification-channels/:id` | PUT | Update a notification channel |
+| `/api/config/notification-channels/:id` | DELETE | Remove a notification channel |
+| `/api/config/notification-channels/:id/toggle` | POST | Enable/disable a channel |
+| `/api/config/notification-channels/:id/test` | POST | Test a notification channel |
 | `/api/status` | GET | Service status with uptime and activity |
 | `/r/:id` | GET | Redirect to Jellyfin content |
 | `/health` | GET | Health check |

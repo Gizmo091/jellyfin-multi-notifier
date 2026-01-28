@@ -13,28 +13,18 @@ interface AggregationWindow {
 
 type WindowKey = 'movies' | 'series' | 'movies-removed' | 'series-removed'
 
-export interface AggregationStatus {
-  movies: {
-    count: number
-    windowStart: Date | null
-    items: MediaEvent[]
-  }
-  series: {
-    count: number
-    windowStart: Date | null
-    items: MediaEvent[]
-  }
-  moviesRemoved: {
-    count: number
-    windowStart: Date | null
-    items: MediaEvent[]
-  }
-  seriesRemoved: {
-    count: number
-    windowStart: Date | null
-    items: MediaEvent[]
-  }
+export interface AggregationWindowStatus {
+  count: number
+  windowStart: Date | null
+  items: MediaEvent[]
   windowDurationMinutes: number
+}
+
+export interface AggregationStatus {
+  movies: AggregationWindowStatus
+  series: AggregationWindowStatus
+  moviesRemoved: AggregationWindowStatus
+  seriesRemoved: AggregationWindowStatus
 }
 
 function createEmptyWindow(): AggregationWindow {
@@ -54,10 +44,16 @@ class AggregationService extends EventEmitter {
   private seriesRemovedWindow: AggregationWindow = createEmptyWindow()
 
   /**
-   * Get the window duration in milliseconds from config.
+   * Get the window duration in milliseconds for a specific window type.
    */
-  private get windowDurationMs(): number {
-    return config.aggregationWindowMinutes * 60 * 1000
+  private getWindowDurationMs(type: WindowKey): number {
+    const minutes = {
+      'movies': config.aggregationWindowMinutes.movies,
+      'series': config.aggregationWindowMinutes.series,
+      'movies-removed': config.aggregationWindowMinutes.moviesRemoved,
+      'series-removed': config.aggregationWindowMinutes.seriesRemoved,
+    }[type]
+    return minutes * 60 * 1000
   }
 
   /**
@@ -86,9 +82,11 @@ class AggregationService extends EventEmitter {
     logger.info('Aggregation', `Added ${event.type} "${event.title}" to ${type} window`, { type: event.type, title: event.title, windowType: type, itemCount: window.items.length })
 
     if (!window.timer) {
+      const durationMs = this.getWindowDurationMs(type)
+      const durationMinutes = durationMs / 60000
       window.startTime = new Date()
-      window.timer = setTimeout(() => this.flushWindow(window, type), this.windowDurationMs)
-      logger.info('Aggregation', `Started ${type} aggregation window (${config.aggregationWindowMinutes} min)`, { windowType: type, durationMinutes: config.aggregationWindowMinutes })
+      window.timer = setTimeout(() => this.flushWindow(window, type), durationMs)
+      logger.info('Aggregation', `Started ${type} aggregation window (${durationMinutes} min)`, { windowType: type, durationMinutes })
     }
   }
 
@@ -150,23 +148,26 @@ class AggregationService extends EventEmitter {
         count: this.movieWindow.items.length,
         windowStart: this.movieWindow.startTime,
         items: [...this.movieWindow.items],
+        windowDurationMinutes: config.aggregationWindowMinutes.movies,
       },
       series: {
         count: this.seriesWindow.items.length,
         windowStart: this.seriesWindow.startTime,
         items: [...this.seriesWindow.items],
+        windowDurationMinutes: config.aggregationWindowMinutes.series,
       },
       moviesRemoved: {
         count: this.movieRemovedWindow.items.length,
         windowStart: this.movieRemovedWindow.startTime,
         items: [...this.movieRemovedWindow.items],
+        windowDurationMinutes: config.aggregationWindowMinutes.moviesRemoved,
       },
       seriesRemoved: {
         count: this.seriesRemovedWindow.items.length,
         windowStart: this.seriesRemovedWindow.startTime,
         items: [...this.seriesRemovedWindow.items],
+        windowDurationMinutes: config.aggregationWindowMinutes.seriesRemoved,
       },
-      windowDurationMinutes: config.aggregationWindowMinutes,
     }
   }
 

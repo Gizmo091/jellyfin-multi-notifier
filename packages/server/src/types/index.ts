@@ -11,6 +11,26 @@ export interface ApiErrorResponse {
 
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse
 
+// Notification Channel Types
+export type ChannelType = 'whatsapp' | 'discord' | 'telegram'
+
+export type SupportedLanguage = 'fr' | 'en' | 'es' | 'de' | 'it' | 'pt'
+
+export interface NotificationChannelConfig {
+  telegramBotToken?: string
+}
+
+export interface NotificationChannel {
+  id: string
+  channelType: ChannelType
+  target: string // group_id | webhook_url | chat_id
+  displayName: string
+  language: SupportedLanguage
+  config?: NotificationChannelConfig
+  enabled: boolean
+  createdAt: string
+}
+
 // Media Types
 export type MediaType = 'movie' | 'series' | 'episode'
 

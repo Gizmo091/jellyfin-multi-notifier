@@ -221,62 +221,124 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
   /**
    * GET /api/whatsapp/groups
    * Returns all WhatsApp groups organized by community hierarchy.
+   * Uses cache (7 days) unless refresh=true is passed.
    */
-  fastify.get('/api/whatsapp/groups', async (): Promise<ApiResponse<WhatsAppGroupsResponse>> => {
-    if (!whatsappClient.isConnected()) {
-      return {
-        success: false,
-        error: 'WhatsApp is not connected',
-      }
-    }
+  fastify.get<{ Querystring: { refresh?: string } }>(
+    '/api/whatsapp/groups',
+    async (request): Promise<ApiResponse<WhatsAppGroupsResponse & { cachedAt?: string }>> => {
+      const forceRefresh = request.query.refresh === 'true'
 
-    try {
-      const allGroups = await whatsappClient.getGroups()
-
-      // Separate communities and groups
-      const communities = allGroups.filter((g) => g.isCommunity)
-      const nonCommunityGroups = allGroups.filter((g) => !g.isCommunity)
-
-      // Build community hierarchy
-      const communityMap = new Map<
-        string,
-        { id: string; name: string; image?: string; groups: WhatsAppGroup[] }
-      >()
-
-      for (const community of communities) {
-        communityMap.set(community.id, {
-          id: community.id,
-          name: community.name,
-          image: community.image,
-          groups: [],
-        })
-      }
-
-      // Assign groups to their parent communities
-      const standaloneGroups: WhatsAppGroup[] = []
-      for (const group of nonCommunityGroups) {
-        if (group.linkedParent && communityMap.has(group.linkedParent)) {
-          communityMap.get(group.linkedParent)!.groups.push(group)
-        } else {
-          standaloneGroups.push(group)
+      // Check cache first (unless force refresh)
+      if (!forceRefresh) {
+        const cached = settingsService.getCachedWhatsAppGroups()
+        if (cached) {
+          fastify.log.info('Using cached WhatsApp groups')
+          return {
+            success: true,
+            data: {
+              ...(cached.groups as WhatsAppGroupsResponse),
+              cachedAt: cached.cachedAt,
+            },
+          }
         }
       }
 
-      return {
-        success: true,
-        data: {
-          communities: Array.from(communityMap.values()),
-          standaloneGroups,
-        },
+      // Need to fetch fresh data
+      if (!whatsappClient.isConnected()) {
+        // If not connected but have cache, return stale cache with warning
+        const staleCache = settingsService.getCachedWhatsAppGroups()
+        if (staleCache) {
+          return {
+            success: true,
+            data: {
+              ...(staleCache.groups as WhatsAppGroupsResponse),
+              cachedAt: staleCache.cachedAt,
+            },
+          }
+        }
+        return {
+          success: false,
+          error: 'WhatsApp is not connected',
+        }
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch groups'
-      return {
-        success: false,
-        error: errorMessage,
+
+      try {
+        const allGroups = await whatsappClient.getGroups()
+
+        // Separate communities and regular groups
+        const communities = allGroups.filter((g) => g.isCommunity)
+        const nonCommunityGroups = allGroups.filter((g) => !g.isCommunity)
+
+        // Build community hierarchy
+        const communityMap = new Map<
+          string,
+          { id: string; name: string; image?: string; groups: WhatsAppGroup[] }
+        >()
+
+        for (const community of communities) {
+          communityMap.set(community.id, {
+            id: community.id,
+            name: community.name,
+            image: community.image,
+            groups: [],
+          })
+        }
+
+        // Assign groups to their parent communities
+        // Community announcement channels have linkedParent pointing to their community
+        const standaloneGroups: WhatsAppGroup[] = []
+        for (const group of nonCommunityGroups) {
+          if (group.linkedParent && communityMap.has(group.linkedParent)) {
+            // Rename community announcement channel to "Annonces"
+            if (group.isCommunityAnnounce) {
+              group.name = 'Annonces'
+            }
+            communityMap.get(group.linkedParent)!.groups.push(group)
+          } else if (!group.isCommunityAnnounce) {
+            // Only add to standalone if it's not a community announcement without a parent
+            standaloneGroups.push(group)
+          }
+        }
+
+        // Sort helper function (case-insensitive)
+        const sortByName = <T extends { name: string }>(a: T, b: T) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+
+        // Sort sub-groups within each community
+        for (const community of communityMap.values()) {
+          community.groups.sort(sortByName)
+        }
+
+        // Sort communities by name
+        const sortedCommunities = Array.from(communityMap.values()).sort(sortByName)
+
+        // Sort standalone groups by name
+        standaloneGroups.sort(sortByName)
+
+        const responseData: WhatsAppGroupsResponse = {
+          communities: sortedCommunities,
+          standaloneGroups,
+        }
+
+        // Save to cache
+        settingsService.setCachedWhatsAppGroups(responseData)
+
+        return {
+          success: true,
+          data: {
+            ...responseData,
+            cachedAt: new Date().toISOString(),
+          },
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to fetch groups'
+        return {
+          success: false,
+          error: errorMessage,
+        }
       }
     }
-  })
+  )
 
   /**
    * POST /api/whatsapp/send

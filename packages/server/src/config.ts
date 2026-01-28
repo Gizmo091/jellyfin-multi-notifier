@@ -1,3 +1,10 @@
+export interface AggregationWindows {
+  movies: number
+  series: number
+  moviesRemoved: number
+  seriesRemoved: number
+}
+
 export interface Config {
   port: number
   nodeEnv: string
@@ -5,7 +12,7 @@ export interface Config {
   jellyfinUrl: string
   webhookSecret: string
   whatsappPhoneNumber: string
-  aggregationWindowMinutes: number
+  aggregationWindowMinutes: AggregationWindows
   publicUrl: string
   smtpHost: string
   smtpPort: number
@@ -29,6 +36,9 @@ function getEnvNumber(key: string, defaultValue: number): number {
   return isNaN(parsed) ? defaultValue : parsed
 }
 
+// Default aggregation window (used as fallback)
+const defaultAggregationWindow = getEnvNumber('AGGREGATION_WINDOW_MINUTES', 15)
+
 export const config: Config = {
   port: getEnvNumber('PORT', 3000),
   nodeEnv: getEnv('NODE_ENV', 'development'),
@@ -36,7 +46,12 @@ export const config: Config = {
   jellyfinUrl: getEnv('JELLYFIN_URL', 'http://localhost:8096'),
   webhookSecret: getEnv('WEBHOOK_SECRET', ''),
   whatsappPhoneNumber: getEnv('WHATSAPP_PHONE_NUMBER', ''),
-  aggregationWindowMinutes: getEnvNumber('AGGREGATION_WINDOW_MINUTES', 15),
+  aggregationWindowMinutes: {
+    movies: getEnvNumber('AGGREGATION_WINDOW_MOVIES_MINUTES', defaultAggregationWindow),
+    series: getEnvNumber('AGGREGATION_WINDOW_SERIES_MINUTES', defaultAggregationWindow),
+    moviesRemoved: getEnvNumber('AGGREGATION_WINDOW_MOVIES_REMOVED_MINUTES', defaultAggregationWindow),
+    seriesRemoved: getEnvNumber('AGGREGATION_WINDOW_SERIES_REMOVED_MINUTES', defaultAggregationWindow),
+  },
   publicUrl: getEnv('PUBLIC_URL', 'http://localhost:3000'),
   smtpHost: getEnv('SMTP_HOST', ''),
   smtpPort: getEnvNumber('SMTP_PORT', 587),

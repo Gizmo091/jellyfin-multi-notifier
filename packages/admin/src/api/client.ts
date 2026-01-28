@@ -17,13 +17,18 @@ async function request<T>(
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   try {
+    // Only add Content-Type header if there's a body
+    const headers: Record<string, string> = {
+      ...options.headers as Record<string, string>,
+    }
+    if (options.body) {
+      headers['Content-Type'] = 'application/json'
+    }
+
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     })
 
     const data = await response.json()
@@ -65,6 +70,7 @@ export interface AggregationWindowStatus {
   count: number
   windowStart: string | null
   items: Array<{ title: string; type: string }>
+  windowDurationMinutes: number
 }
 
 export interface AggregationStatus {
@@ -72,7 +78,6 @@ export interface AggregationStatus {
   series: AggregationWindowStatus
   moviesRemoved: AggregationWindowStatus
   seriesRemoved: AggregationWindowStatus
-  windowDurationMinutes: number
 }
 
 export interface AlertChannels {
@@ -83,6 +88,8 @@ export interface AlertChannels {
 
 export type SupportedLanguage = 'fr' | 'en' | 'es' | 'de' | 'it' | 'pt'
 
+export type ChannelType = 'whatsapp' | 'discord' | 'telegram'
+
 export interface WhatsAppGroupConfig {
   id: string
   groupId: string
@@ -90,12 +97,41 @@ export interface WhatsAppGroupConfig {
   language: SupportedLanguage
 }
 
+export interface NotificationChannelConfig {
+  telegramBotToken?: string
+}
+
+export interface NotificationChannel {
+  id: string
+  channelType: ChannelType
+  target: string
+  displayName: string
+  language: SupportedLanguage
+  config?: NotificationChannelConfig
+  enabled: boolean
+  createdAt: string
+}
+
+export interface AddNotificationChannelRequest {
+  channelType: ChannelType
+  target: string
+  displayName: string
+  language: SupportedLanguage
+  config?: NotificationChannelConfig
+}
+
 export interface ConfigStatus {
   jellyfinUrl: string
   whatsappGroupId: string | null // Deprecated
   whatsappGroups: WhatsAppGroupConfig[]
+  notificationChannels: NotificationChannel[]
   supportedLanguages: { code: string; name: string }[]
-  aggregationWindowMinutes: number
+  aggregationWindowMinutes: {
+    movies: number
+    series: number
+    moviesRemoved: number
+    seriesRemoved: number
+  }
   publicUrl: string
   alerts: {
     emailConfigured: boolean
@@ -109,6 +145,7 @@ export interface WhatsAppGroup {
   name: string
   image?: string
   isCommunity: boolean
+  isCommunityAnnounce?: boolean
   linkedParent?: string
   participantCount: number
 }
@@ -121,6 +158,7 @@ export interface WhatsAppGroupsResponse {
     groups: WhatsAppGroup[]
   }>
   standaloneGroups: WhatsAppGroup[]
+  cachedAt?: string
 }
 
 export interface AlertTestResult {
@@ -265,8 +303,9 @@ export const apiClient = {
     return request<ServiceStatus>('/status')
   },
 
-  async getWhatsAppGroups(): Promise<ApiResponse<WhatsAppGroupsResponse>> {
-    return request<WhatsAppGroupsResponse>('/whatsapp/groups')
+  async getWhatsAppGroups(refresh = false): Promise<ApiResponse<WhatsAppGroupsResponse>> {
+    const query = refresh ? '?refresh=true' : ''
+    return request<WhatsAppGroupsResponse>(`/whatsapp/groups${query}`)
   },
 
   async setWhatsAppGroup(groupId: string): Promise<ApiResponse<{ groupId: string }>> {
@@ -314,6 +353,62 @@ export const apiClient = {
   async removeWhatsAppGroup(id: string): Promise<ApiResponse<{ message: string }>> {
     return request<{ message: string }>(`/config/whatsapp-groups/${id}`, {
       method: 'DELETE',
+    })
+  },
+
+  // Notification Channels (multi-platform)
+  async getNotificationChannels(): Promise<ApiResponse<{ channels: NotificationChannel[] }>> {
+    return request<{ channels: NotificationChannel[] }>('/config/notification-channels')
+  },
+
+  async addNotificationChannel(
+    data: AddNotificationChannelRequest
+  ): Promise<ApiResponse<NotificationChannel>> {
+    return request<NotificationChannel>('/config/notification-channels', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async updateNotificationChannel(
+    id: string,
+    updates: { displayName?: string; language?: SupportedLanguage; config?: NotificationChannelConfig }
+  ): Promise<ApiResponse<{ message: string }>> {
+    return request<{ message: string }>(`/config/notification-channels/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    })
+  },
+
+  async removeNotificationChannel(id: string): Promise<ApiResponse<{ message: string }>> {
+    return request<{ message: string }>(`/config/notification-channels/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async toggleNotificationChannel(
+    id: string,
+    enabled: boolean
+  ): Promise<ApiResponse<{ message: string; enabled: boolean }>> {
+    return request<{ message: string; enabled: boolean }>(`/config/notification-channels/${id}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    })
+  },
+
+  async testNotificationChannel(id: string): Promise<ApiResponse<{ success: boolean; error?: string }>> {
+    return request<{ success: boolean; error?: string }>(`/config/notification-channels/${id}/test`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  },
+
+  async testNotificationChannelConfig(
+    data: Omit<AddNotificationChannelRequest, 'displayName'>
+  ): Promise<ApiResponse<{ success: boolean; error?: string }>> {
+    return request<{ success: boolean; error?: string }>('/config/notification-channels/test-config', {
+      method: 'POST',
+      body: JSON.stringify(data),
     })
   },
 

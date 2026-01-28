@@ -101,12 +101,16 @@ pnpm-lock.yaml
 *.vue.js
 *.vue.ts
 
+# Vite generated config
+vite.config.js
+vite.config.d.ts
+
 # Docker
 .docker/
 
-# BMAD (development workflow - not needed in production)
-_bmad-output/
+# BMAD workflow tooling (not needed in production)
 _bmad/
+# Note: _bmad-output/ is tracked - contains project documentation (PRD, architecture, stories)
 
 # Claude Code
 .claude/

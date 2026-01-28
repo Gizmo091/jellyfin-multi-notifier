@@ -1,17 +1,20 @@
 import { FastifyInstance } from 'fastify'
 import { randomUUID } from 'crypto'
-import { config } from '../config.js'
-import { settingsService, type WhatsAppGroupConfig, type SupportedLanguage } from '../services/settings/index.js'
+import { config, type AggregationWindows } from '../config.js'
+import { settingsService, type WhatsAppGroupConfig } from '../services/settings/index.js'
 import { aggregationService } from '../services/aggregation/index.js'
 import { messageFormatter } from '../services/message-formatter/index.js'
-import type { ApiResponse, MediaEvent } from '../types/index.js'
+import { notificationService } from '../services/notification/index.js'
+import { getSender } from '../services/senders/index.js'
+import type { ApiResponse, MediaEvent, NotificationChannel, ChannelType, SupportedLanguage } from '../types/index.js'
 
 interface ConfigStatus {
   jellyfinUrl: string
   whatsappGroupId: string | null // Deprecated, kept for backwards compatibility
   whatsappGroups: WhatsAppGroupConfig[]
+  notificationChannels: NotificationChannel[]
   supportedLanguages: { code: string; name: string }[]
-  aggregationWindowMinutes: number
+  aggregationWindowMinutes: AggregationWindows
   publicUrl: string
   alerts: {
     emailConfigured: boolean
@@ -50,6 +53,31 @@ interface UpdateWhatsAppGroupBody {
   language?: SupportedLanguage
 }
 
+interface AddNotificationChannelBody {
+  channelType: ChannelType
+  target: string
+  displayName: string
+  language: SupportedLanguage
+  config?: { telegramBotToken?: string }
+}
+
+interface UpdateNotificationChannelBody {
+  displayName?: string
+  language?: SupportedLanguage
+  config?: { telegramBotToken?: string }
+}
+
+interface ToggleNotificationChannelBody {
+  enabled: boolean
+}
+
+interface TestChannelConfigBody {
+  channelType: ChannelType
+  target: string
+  language: SupportedLanguage
+  config?: { telegramBotToken?: string }
+}
+
 /**
  * Config routes for viewing current configuration.
  */
@@ -65,6 +93,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
         jellyfinUrl: config.jellyfinUrl,
         whatsappGroupId: settingsService.getWhatsAppGroupId(), // Deprecated
         whatsappGroups: settingsService.getWhatsAppGroups(),
+        notificationChannels: settingsService.getNotificationChannels(),
         supportedLanguages: messageFormatter.getSupportedLanguages(),
         aggregationWindowMinutes: config.aggregationWindowMinutes,
         publicUrl: config.publicUrl,
@@ -380,6 +409,332 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
         data: {
           message: 'Group removed successfully',
         },
+      }
+    }
+  )
+
+  // =============================================
+  // Notification Channels (multi-platform)
+  // =============================================
+
+  /**
+   * GET /api/config/notification-channels
+   * Returns all configured notification channels.
+   */
+  fastify.get('/api/config/notification-channels', async (): Promise<ApiResponse<{ channels: NotificationChannel[] }>> => {
+    return {
+      success: true,
+      data: {
+        channels: settingsService.getNotificationChannels(),
+      },
+    }
+  })
+
+  /**
+   * POST /api/config/notification-channels
+   * Adds a new notification channel.
+   */
+  fastify.post<{ Body: AddNotificationChannelBody }>(
+    '/api/config/notification-channels',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['channelType', 'target', 'displayName', 'language'],
+          properties: {
+            channelType: {
+              type: 'string',
+              enum: ['whatsapp', 'discord', 'telegram'],
+              description: 'Type of notification channel',
+            },
+            target: {
+              type: 'string',
+              minLength: 1,
+              description: 'Target identifier (group_id, webhook_url, or chat_id)',
+            },
+            displayName: {
+              type: 'string',
+              minLength: 1,
+              description: 'Display name for the channel',
+            },
+            language: {
+              type: 'string',
+              enum: ['fr', 'en', 'es', 'de', 'it', 'pt'],
+              description: 'Language for notifications',
+            },
+            config: {
+              type: 'object',
+              properties: {
+                telegramBotToken: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request): Promise<ApiResponse<NotificationChannel>> => {
+      const { channelType, target, displayName, language, config: channelConfig } = request.body
+
+      const channel = settingsService.addNotificationChannel(
+        channelType,
+        target,
+        displayName,
+        language,
+        channelConfig
+      )
+
+      fastify.log.info({ channel }, 'Notification channel added')
+
+      return {
+        success: true,
+        data: channel,
+      }
+    }
+  )
+
+  /**
+   * PUT /api/config/notification-channels/:id
+   * Updates an existing notification channel.
+   */
+  fastify.put<{ Params: { id: string }; Body: UpdateNotificationChannelBody }>(
+    '/api/config/notification-channels/:id',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+        body: {
+          type: 'object',
+          properties: {
+            displayName: {
+              type: 'string',
+              minLength: 1,
+            },
+            language: {
+              type: 'string',
+              enum: ['fr', 'en', 'es', 'de', 'it', 'pt'],
+            },
+            config: {
+              type: 'object',
+              properties: {
+                telegramBotToken: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request): Promise<ApiResponse<{ message: string }>> => {
+      const { id } = request.params
+      const updates = request.body
+
+      settingsService.updateNotificationChannel(id, updates)
+
+      fastify.log.info({ id, updates }, 'Notification channel updated')
+
+      return {
+        success: true,
+        data: {
+          message: 'Channel updated successfully',
+        },
+      }
+    }
+  )
+
+  /**
+   * DELETE /api/config/notification-channels/:id
+   * Removes a notification channel.
+   */
+  fastify.delete<{ Params: { id: string } }>(
+    '/api/config/notification-channels/:id',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request): Promise<ApiResponse<{ message: string }>> => {
+      const { id } = request.params
+
+      settingsService.removeNotificationChannel(id)
+
+      fastify.log.info({ id }, 'Notification channel removed')
+
+      return {
+        success: true,
+        data: {
+          message: 'Channel removed successfully',
+        },
+      }
+    }
+  )
+
+  /**
+   * POST /api/config/notification-channels/:id/toggle
+   * Enables or disables a notification channel.
+   */
+  fastify.post<{ Params: { id: string }; Body: ToggleNotificationChannelBody }>(
+    '/api/config/notification-channels/:id/toggle',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['enabled'],
+          properties: {
+            enabled: { type: 'boolean' },
+          },
+        },
+      },
+    },
+    async (request): Promise<ApiResponse<{ message: string; enabled: boolean }>> => {
+      const { id } = request.params
+      const { enabled } = request.body
+
+      settingsService.toggleNotificationChannel(id, enabled)
+
+      fastify.log.info({ id, enabled }, `Notification channel ${enabled ? 'enabled' : 'disabled'}`)
+
+      return {
+        success: true,
+        data: {
+          message: `Channel ${enabled ? 'enabled' : 'disabled'} successfully`,
+          enabled,
+        },
+      }
+    }
+  )
+
+  /**
+   * POST /api/config/notification-channels/:id/test
+   * Sends a test notification to a specific channel.
+   */
+  fastify.post<{ Params: { id: string } }>(
+    '/api/config/notification-channels/:id/test',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request): Promise<ApiResponse<{ success: boolean; error?: string }>> => {
+      const { id } = request.params
+
+      const result = await notificationService.sendTestNotification(id)
+
+      fastify.log.info({ id, result }, 'Test notification sent')
+
+      return {
+        success: true,
+        data: result,
+      }
+    }
+  )
+
+  /**
+   * POST /api/config/notification-channels/test-config
+   * Tests a channel configuration before saving it.
+   */
+  fastify.post<{ Body: TestChannelConfigBody }>(
+    '/api/config/notification-channels/test-config',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['channelType', 'target', 'language'],
+          properties: {
+            channelType: {
+              type: 'string',
+              enum: ['whatsapp', 'discord', 'telegram'],
+            },
+            target: {
+              type: 'string',
+              minLength: 1,
+            },
+            language: {
+              type: 'string',
+              enum: ['fr', 'en', 'es', 'de', 'it', 'pt'],
+            },
+            config: {
+              type: 'object',
+              properties: {
+                telegramBotToken: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request): Promise<ApiResponse<{ success: boolean; error?: string }>> => {
+      const { channelType, target, language, config: channelConfig } = request.body
+
+      // Create a temporary channel object for testing
+      const tempChannel: NotificationChannel = {
+        id: 'temp-test',
+        channelType,
+        target,
+        displayName: 'Test',
+        language,
+        config: channelConfig,
+        enabled: true,
+        createdAt: new Date().toISOString(),
+      }
+
+      const sender = getSender(channelType)
+
+      if (!sender.isAvailable(tempChannel)) {
+        return {
+          success: true,
+          data: {
+            success: false,
+            error: `${channelType} sender is not available`,
+          },
+        }
+      }
+
+      // Create a test message
+      const testMessage = messageFormatter.formatForPlatform(
+        'movies',
+        [{
+          id: 'test-123',
+          type: 'movie',
+          title: 'Test Movie',
+          year: 2024,
+          jellyfinId: 'test-jellyfin-id',
+          eventType: 'added',
+          timestamp: new Date(),
+        }],
+        language,
+        channelType
+      )
+
+      const result = await sender.send(tempChannel, testMessage.text)
+
+      fastify.log.info({ channelType, target, result }, 'Test channel config')
+
+      return {
+        success: true,
+        data: result,
       }
     }
   )

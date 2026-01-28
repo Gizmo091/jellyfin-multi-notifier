@@ -1,0 +1,81 @@
+# generated: 2026-01-27
+# project: Jellyfin WhatsApp Notifier
+# project_key: jellyfin-whatsapp-notifier
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-01-27
+project: Jellyfin WhatsApp Notifier
+project_key: jellyfin-whatsapp-notifier
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Project Foundation & Webhook Reception
+  epic-1: done
+  1-1-project-scaffolding-docker-setup: done
+  1-2-webhook-endpoint-secret-validation: done
+  1-3-media-metadata-extraction: done
+  epic-1-retrospective: optional
+
+  # Epic 2: WhatsApp Connection & Basic Messaging
+  epic-2: done
+  2-1-whatsapp-connection-pairing-code: done
+  2-2-send-text-messages-to-group: done
+  2-3-send-images-with-captions: done
+  2-4-connection-status-disconnection-detection: done
+  epic-2-retrospective: optional
+
+  # Epic 3: Intelligent Notification Delivery
+  epic-3: done
+  3-1-temporal-aggregation-separate-windows: review
+  3-2-cover-image-fetching-graceful-degradation: review
+  3-3-redirect-link-service: review
+  3-4-formatted-notification-delivery: review
+  epic-3-retrospective: optional
+
+  # Epic 4: Resilience & Admin Alerts
+  epic-4: done
+  4-1-persistent-message-queue-sqlite: review
+  4-2-automatic-retry-exponential-backoff: review
+  4-3-queue-processing-on-reconnection: done # Covered by Story 4.2 - retryService processes pending on reconnect
+  4-4-multi-channel-alert-system: review
+  4-5-queue-visibility-api: done # Covered by Story 4.1 - /api/queue endpoints
+  epic-4-retrospective: optional
+
+  # Epic 5: Admin Dashboard
+  epic-5: done
+  5-1-admin-ui-foundation-authentication: review
+  5-2-whatsapp-configuration-status-view: review
+  5-3-jellyfin-alert-channel-configuration: done # Covered by Story 5.2 - config display + test alerts
+  5-4-service-status-dashboard: review
+  epic-5-retrospective: optional

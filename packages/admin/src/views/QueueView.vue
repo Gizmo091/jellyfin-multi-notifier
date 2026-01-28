@@ -107,7 +107,7 @@ onUnmounted(() => {
             <div class="flex justify-between items-center mb-2">
               <span class="font-medium text-blue-800">Movies ({{ aggregation.movies.count }})</span>
               <span v-if="aggregation.movies.windowStart" class="text-sm font-mono text-blue-600">
-                {{ formatCountdown(aggregation.movies.windowStart, aggregation.windowDurationMinutes) }}
+                {{ formatCountdown(aggregation.movies.windowStart, aggregation.movies.windowDurationMinutes) }}
               </span>
             </div>
             <ul class="text-sm text-blue-700 space-y-1">
@@ -122,7 +122,7 @@ onUnmounted(() => {
             <div class="flex justify-between items-center mb-2">
               <span class="font-medium text-purple-800">Series ({{ aggregation.series.count }})</span>
               <span v-if="aggregation.series.windowStart" class="text-sm font-mono text-purple-600">
-                {{ formatCountdown(aggregation.series.windowStart, aggregation.windowDurationMinutes) }}
+                {{ formatCountdown(aggregation.series.windowStart, aggregation.series.windowDurationMinutes) }}
               </span>
             </div>
             <ul class="text-sm text-purple-700 space-y-1">
@@ -137,7 +137,7 @@ onUnmounted(() => {
             <div class="flex justify-between items-center mb-2">
               <span class="font-medium text-red-800">Movies removed ({{ aggregation.moviesRemoved.count }})</span>
               <span v-if="aggregation.moviesRemoved.windowStart" class="text-sm font-mono text-red-600">
-                {{ formatCountdown(aggregation.moviesRemoved.windowStart, aggregation.windowDurationMinutes) }}
+                {{ formatCountdown(aggregation.moviesRemoved.windowStart, aggregation.moviesRemoved.windowDurationMinutes) }}
               </span>
             </div>
             <ul class="text-sm text-red-700 space-y-1">
@@ -152,7 +152,7 @@ onUnmounted(() => {
             <div class="flex justify-between items-center mb-2">
               <span class="font-medium text-orange-800">Series removed ({{ aggregation.seriesRemoved.count }})</span>
               <span v-if="aggregation.seriesRemoved.windowStart" class="text-sm font-mono text-orange-600">
-                {{ formatCountdown(aggregation.seriesRemoved.windowStart, aggregation.windowDurationMinutes) }}
+                {{ formatCountdown(aggregation.seriesRemoved.windowStart, aggregation.seriesRemoved.windowDurationMinutes) }}
               </span>
             </div>
             <ul class="text-sm text-orange-700 space-y-1">

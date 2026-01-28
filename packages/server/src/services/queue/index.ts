@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
-import type { MediaType } from '../../types/index.js'
+import type { MediaType, ChannelType } from '../../types/index.js'
 
 const DATA_DIR = path.join(process.cwd(), 'data')
 const DB_PATH = path.join(DATA_DIR, 'queue.db')
@@ -13,6 +13,8 @@ export interface QueueMessage {
   content: string
   mediaType: MediaType
   imageUrl: string | null
+  channelId: string | null
+  channelType: ChannelType | null
   status: QueueMessageStatus
   retryCount: number
   createdAt: string
@@ -24,6 +26,8 @@ interface DbRow {
   content: string
   media_type: string
   image_url: string | null
+  channel_id: string | null
+  channel_type: string | null
   status: string
   retry_count: number
   created_at: string
@@ -63,6 +67,8 @@ class QueueService {
         content TEXT NOT NULL,
         media_type TEXT NOT NULL,
         image_url TEXT,
+        channel_id TEXT,
+        channel_type TEXT,
         status TEXT DEFAULT 'pending',
         retry_count INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -74,19 +80,37 @@ class QueueService {
       CREATE INDEX IF NOT EXISTS idx_queue_status ON message_queue(status)
     `)
 
+    // Add channel columns if they don't exist (migration for existing databases)
+    this.migrateAddChannelColumns()
+
     console.log('QueueService initialized with SQLite database')
+  }
+
+  /**
+   * Add channel_id and channel_type columns if they don't exist.
+   */
+  private migrateAddChannelColumns(): void {
+    // Check if channel_id column exists
+    const tableInfo = this.db.prepare("PRAGMA table_info(message_queue)").all() as { name: string }[]
+    const hasChannelId = tableInfo.some(col => col.name === 'channel_id')
+
+    if (!hasChannelId) {
+      this.db.exec('ALTER TABLE message_queue ADD COLUMN channel_id TEXT')
+      this.db.exec('ALTER TABLE message_queue ADD COLUMN channel_type TEXT')
+      console.log('QueueService: Added channel_id and channel_type columns')
+    }
   }
 
   /**
    * Add a message to the queue.
    */
-  addMessage(content: string, mediaType: MediaType, imageUrl?: string): number {
+  addMessage(content: string, mediaType: MediaType, imageUrl?: string, channelId?: string, channelType?: ChannelType): number {
     const stmt = this.db.prepare(
-      'INSERT INTO message_queue (content, media_type, image_url) VALUES (?, ?, ?)'
+      'INSERT INTO message_queue (content, media_type, image_url, channel_id, channel_type) VALUES (?, ?, ?, ?, ?)'
     )
-    const result = stmt.run(content, mediaType, imageUrl || null)
+    const result = stmt.run(content, mediaType, imageUrl || null, channelId || null, channelType || null)
     const id = result.lastInsertRowid as number
-    console.log(`Message queued with ID ${id} (type: ${mediaType})`)
+    console.log(`Message queued with ID ${id} (type: ${mediaType}, channel: ${channelId || 'all'})`)
     return id
   }
 
@@ -193,6 +217,17 @@ class QueueService {
   }
 
   /**
+   * Get pending messages for a specific channel type.
+   */
+  getPendingByChannelType(channelType: ChannelType): QueueMessage[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM message_queue WHERE status = ? AND channel_type = ? ORDER BY created_at'
+    ).all('pending', channelType) as DbRow[]
+
+    return rows.map(this.mapRowToMessage)
+  }
+
+  /**
    * Map database row to QueueMessage.
    */
   private mapRowToMessage(row: DbRow): QueueMessage {
@@ -201,6 +236,8 @@ class QueueService {
       content: row.content,
       mediaType: row.media_type as MediaType,
       imageUrl: row.image_url,
+      channelId: row.channel_id,
+      channelType: row.channel_type as ChannelType | null,
       status: row.status as QueueMessageStatus,
       retryCount: row.retry_count,
       createdAt: row.created_at,

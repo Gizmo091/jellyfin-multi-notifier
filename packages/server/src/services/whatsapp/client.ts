@@ -29,6 +29,7 @@ export interface WhatsAppGroup {
   name: string
   image?: string
   isCommunity: boolean
+  isCommunityAnnounce?: boolean
   linkedParent?: string
   participantCount: number
 }
@@ -397,6 +398,7 @@ class WhatsAppClient extends EventEmitter {
           name: metadata.subject,
           image,
           isCommunity: metadata.isCommunity || false,
+          isCommunityAnnounce: metadata.isCommunityAnnounce || false,
           linkedParent: metadata.linkedParent || undefined,
           participantCount: metadata.participants?.length || 0,
         })

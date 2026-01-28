@@ -1,7 +1,14 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
+import fastifyStatic from '@fastify/static'
+import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
 import { config } from './config.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 import { webhookRoutes } from './routes/webhook.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
 import { aggregationRoutes } from './routes/aggregation.js'
@@ -10,6 +17,7 @@ import { queueRoutes } from './routes/queue.js'
 import { alertRoutes } from './routes/alert.js'
 import { configRoutes } from './routes/config.js'
 import { statusRoutes } from './routes/status.js'
+import { logsRoutes } from './routes/logs.js'
 import { authRoutes, authHook } from './routes/auth.js'
 import { notificationService } from './services/notification/index.js'
 import { retryService } from './services/retry/index.js'
@@ -43,18 +51,6 @@ fastify.get('/health', async () => {
   return { success: true, data: { status: 'ok' } }
 })
 
-// Root endpoint
-fastify.get('/', async () => {
-  return {
-    success: true,
-    data: {
-      name: 'Jellyfin WhatsApp Notifier',
-      version: '1.0.0',
-      status: 'running',
-    },
-  }
-})
-
 // Register webhook routes
 await fastify.register(webhookRoutes)
 
@@ -78,6 +74,33 @@ await fastify.register(configRoutes)
 
 // Register status routes
 await fastify.register(statusRoutes)
+
+// Register logs routes
+await fastify.register(logsRoutes)
+
+// Serve static files from admin build (production)
+const adminDistPath = path.join(__dirname, '../../admin/dist')
+if (fs.existsSync(adminDistPath)) {
+  await fastify.register(fastifyStatic, {
+    root: adminDistPath,
+    prefix: '/',
+    decorateReply: false,
+  })
+
+  // SPA fallback: serve index.html for all non-API routes
+  fastify.setNotFoundHandler((request, reply) => {
+    // Don't serve index.html for API routes
+    if (request.url.startsWith('/api/') || request.url.startsWith('/webhook')) {
+      return reply.status(404).send({ success: false, error: 'Not found' })
+    }
+    // Serve index.html for SPA routing
+    return reply.sendFile('index.html')
+  })
+
+  fastify.log.info(`Serving admin UI from ${adminDistPath}`)
+} else {
+  fastify.log.warn(`Admin dist not found at ${adminDistPath}. Run 'npm run build' in packages/admin first.`)
+}
 
 // Initialize notification service (wires aggregation events to WhatsApp)
 notificationService.initialize()

@@ -213,14 +213,11 @@ onUnmounted(() => {
           <div v-if="aggregationStatus" class="space-y-2">
             <div class="flex justify-between">
               <span class="text-gray-600">Movies:</span>
-              <span class="font-medium">{{ aggregationStatus.movies.count }} pending</span>
+              <span class="font-medium">{{ aggregationStatus.movies.count }} pending ({{ aggregationStatus.movies.windowDurationMinutes }}min)</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-600">Series:</span>
-              <span class="font-medium">{{ aggregationStatus.series.count }} pending</span>
-            </div>
-            <div class="text-sm text-gray-500">
-              Window: {{ aggregationStatus.windowDurationMinutes }} min
+              <span class="font-medium">{{ aggregationStatus.series.count }} pending ({{ aggregationStatus.series.windowDurationMinutes }}min)</span>
             </div>
           </div>
         </div>
