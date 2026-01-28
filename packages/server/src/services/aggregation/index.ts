@@ -75,8 +75,16 @@ class AggregationService extends EventEmitter {
 
   /**
    * Add an item to a window and start the timer if needed.
+   * Deduplicates by jellyfinId to handle multiple webhook calls for the same item.
    */
   private addToWindow(window: AggregationWindow, event: MediaEvent, type: WindowKey): void {
+    // Deduplicate: skip if item with same jellyfinId already exists in window
+    const isDuplicate = window.items.some(item => item.jellyfinId === event.jellyfinId)
+    if (isDuplicate) {
+      logger.debug('Aggregation', `Skipping duplicate ${event.type} "${event.title}" (${event.jellyfinId})`, { type: event.type, title: event.title, jellyfinId: event.jellyfinId })
+      return
+    }
+
     window.items.push(event)
     logger.info('Aggregation', `Added ${event.type} "${event.title}" to ${type} window`, { type: event.type, title: event.title, windowType: type, itemCount: window.items.length })
 
