@@ -271,7 +271,7 @@ Admin dashboard: ${config.publicUrl}
    */
   async testAlerts(): Promise<AlertResult[]> {
     const subject = '[Jellyfin Notifier] Test Alert'
-    const message = `This is a test alert from Jellyfin WhatsApp Notifier.
+    const message = `This is a test alert from Jellyfin Multi Notifier.
 
 Time: ${new Date().toISOString()}
 Admin dashboard: ${config.publicUrl}

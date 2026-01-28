@@ -1,5 +1,5 @@
 {
-  "name": "@jellyfin-whatsapp-notifier/admin",
+  "name": "@jellyfin-multi-notifier/admin",
   "version": "1.0.0",
   "private": true,
   "type": "module",

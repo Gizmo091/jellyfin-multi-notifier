@@ -1,7 +1,7 @@
 {
-  "name": "jellyfin-whatsapp-notifier",
+  "name": "jellyfin-multi-notifier",
   "version": "1.0.0",
-  "description": "Autonomous service that monitors Jellyfin and notifies WhatsApp groups",
+  "description": "Autonomous service that monitors Jellyfin and notifies multiple platforms (WhatsApp, Discord, Telegram)",
   "private": true,
   "type": "module",
   "workspaces": [

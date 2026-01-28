@@ -35,7 +35,7 @@ async function handleLogin() {
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-100">
     <div class="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
-      <h1 class="text-2xl font-bold text-center mb-6">Jellyfin WhatsApp Notifier</h1>
+      <h1 class="text-2xl font-bold text-center mb-6">Jellyfin Multi Notifier</h1>
       <h2 class="text-lg text-gray-600 text-center mb-8">Admin Login</h2>
 
       <form @submit.prevent="handleLogin" class="space-y-6">

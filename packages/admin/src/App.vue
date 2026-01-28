@@ -15,7 +15,7 @@ async function handleLogout() {
     <!-- Header (only when authenticated) -->
     <header v-if="authStore.isAuthenticated" class="bg-primary-600 text-white shadow-lg">
       <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-        <h1 class="text-xl font-bold">Jellyfin WhatsApp Notifier</h1>
+        <h1 class="text-xl font-bold">Jellyfin Multi Notifier</h1>
 
         <nav class="flex items-center space-x-6">
           <RouterLink

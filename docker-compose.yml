@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  jellyfin-whatsapp-notifier:
+  jellyfin-multi-notifier:
     image: ghcr.io/gizmo091/jellyfin-multi-notifier:latest
     # Pour build local (développement), commenter "image" ci-dessus et décommenter:
     # build: .
-    container_name: jellyfin-whatsapp-notifier
+    container_name: jellyfin-multi-notifier
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"

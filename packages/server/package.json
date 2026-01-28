@@ -1,7 +1,7 @@
 {
-  "name": "@jellyfin-whatsapp-notifier/server",
+  "name": "@jellyfin-multi-notifier/server",
   "version": "1.0.0",
-  "description": "Fastify backend for Jellyfin WhatsApp Notifier",
+  "description": "Fastify backend for Jellyfin Multi Notifier",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

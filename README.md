@@ -140,7 +140,7 @@ docker compose up -d
 ## Project Structure
 
 ```
-jellyfin-whatsapp-notifier/
+jellyfin-multi-notifier/
 ├── packages/
 │   ├── server/          # Fastify backend (serves API + admin UI)
 │   │   ├── src/         # TypeScript source
