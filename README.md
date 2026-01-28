@@ -98,17 +98,19 @@ docker compose up -d
 
 #### WhatsApp Setup
 
-**Option 1: QR Code**
+**QR Code (Recommended)**
 - Leave `WHATSAPP_PHONE_NUMBER` empty in your `.env` file
 - Click "Connect WhatsApp" in the admin UI
 - A QR code will be displayed
 - On your phone: WhatsApp > Linked Devices > Link a Device > Scan QR Code
 
-**Option 2: Pairing Code**
+**Pairing Code (Experimental)**
+> Note: Pairing code authentication has known reliability issues with the Baileys library. Use QR code for initial setup.
+
 - Set `WHATSAPP_PHONE_NUMBER` in your `.env` file (international format without +, e.g., 33612345678)
 - Pairing code will be sent to your configured alert channels (email, Discord, Telegram)
 - On your phone: WhatsApp > Linked Devices > Link a Device > Link with phone number
-- Enter the pairing code
+- Enter the pairing code immediately (codes expire quickly)
 
 #### Discord Setup
 - In your Discord server: Server Settings > Integrations > Webhooks > New Webhook
