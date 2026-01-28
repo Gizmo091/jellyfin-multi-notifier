@@ -17,9 +17,19 @@ export interface WhatsAppStatus {
   phoneNumber?: string
   lastConnected?: Date
   pairingCode?: string
+  qrCode?: string
   error?: string
   disconnectReason?: string
   isReconnecting?: boolean
+}
+
+export interface WhatsAppGroup {
+  id: string
+  name: string
+  image?: string
+  isCommunity: boolean
+  linkedParent?: string
+  participantCount: number
 }
 
 /**
@@ -81,7 +91,14 @@ class WhatsAppClient extends EventEmitter {
 
       // Handle connection updates
       this.socket.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update
+        const { connection, lastDisconnect, qr } = update
+
+        // Handle QR code for authentication
+        if (qr) {
+          this.status.qrCode = qr
+          console.log('New QR code generated - scan with WhatsApp')
+          this.emit('qr', qr)
+        }
 
         if (connection === 'close') {
           this.status.connected = false
@@ -101,8 +118,13 @@ class WhatsAppClient extends EventEmitter {
             console.log('WhatsApp logged out - session invalidated. Need to re-pair.')
             this.status.error = 'Logged out from WhatsApp. Please reconnect with a new pairing code.'
             this.emit('logged-out')
-            // Clear session files
+            this.emit('disconnected', { reason, permanent: true })
+            // Clear session files and retry connection with fresh session
             await this.clearSession()
+            if (phoneNumber) {
+              console.log('Retrying connection with fresh session...')
+              setTimeout(() => this.connect(phoneNumber), 2000)
+            }
           } else if (statusCode !== DisconnectReason.connectionClosed) {
             // Try to reconnect for other errors
             if (this.reconnectAttempts < this.maxReconnectAttempts) {
@@ -116,9 +138,10 @@ class WhatsAppClient extends EventEmitter {
               this.status.error = 'Connection lost. Max reconnect attempts reached.'
               this.emit('disconnected', { reason, permanent: true })
             }
+          } else {
+            // connectionClosed - emit once
+            this.emit('disconnected', { reason, permanent: false })
           }
-
-          this.emit('disconnected', { reason, permanent: statusCode === DisconnectReason.loggedOut })
         }
 
         if (connection === 'open') {
@@ -126,6 +149,7 @@ class WhatsAppClient extends EventEmitter {
           this.status.lastConnected = new Date()
           this.status.phoneNumber = this.socket?.user?.id?.split(':')[0]
           this.status.pairingCode = undefined
+          this.status.qrCode = undefined
           this.status.error = undefined
           this.status.disconnectReason = undefined
           this.status.isReconnecting = false
@@ -141,8 +165,14 @@ class WhatsAppClient extends EventEmitter {
 
       // Request pairing code if not registered and phone number provided
       if (!state.creds.registered && phoneNumber) {
-        // Wait a bit for socket to be ready
-        await new Promise((resolve) => setTimeout(resolve, 2000))
+        // Wait for socket to be ready (increased from 2s to 5s for stability)
+        await new Promise((resolve) => setTimeout(resolve, 5000))
+
+        // Check if socket was closed during the wait (e.g., loggedOut scenario)
+        if (!this.isConnecting) {
+          console.log('Connection was closed during setup, skipping pairing code request')
+          return null
+        }
 
         try {
           const code = await this.socket.requestPairingCode(phoneNumber)
@@ -152,6 +182,8 @@ class WhatsAppClient extends EventEmitter {
           console.log(`WhatsApp Pairing Code: ${code}`)
           console.log('Enter this code in WhatsApp > Linked Devices > Link a Device')
           console.log('═'.repeat(50))
+          // Emit pairing-code event for alert channels
+          this.emit('pairing-code', code)
           return code
         } catch (error) {
           this.isConnecting = false
@@ -324,6 +356,51 @@ class WhatsAppClient extends EventEmitter {
 
       this.emit('message-failed', { jid: targetJid, type: 'image', error: errorMessage })
       return false
+    }
+  }
+
+  /**
+   * Fetches all WhatsApp groups the connected account is part of.
+   * Includes group images and community hierarchy information.
+   *
+   * @returns Array of WhatsAppGroup objects with community hierarchy info
+   */
+  async getGroups(): Promise<WhatsAppGroup[]> {
+    if (!this.isConnected() || !this.socket) {
+      console.error('Cannot fetch groups: WhatsApp not connected')
+      return []
+    }
+
+    try {
+      const groups = await this.socket.groupFetchAllParticipating()
+      const result: WhatsAppGroup[] = []
+
+      for (const [id, metadata] of Object.entries(groups)) {
+        let image: string | undefined
+
+        // Try to fetch group image
+        try {
+          image = await this.socket.profilePictureUrl(id, 'image')
+        } catch {
+          // Group may not have an image, that's ok
+        }
+
+        result.push({
+          id,
+          name: metadata.subject,
+          image,
+          isCommunity: metadata.isCommunity || false,
+          linkedParent: metadata.linkedParent || undefined,
+          participantCount: metadata.participants?.length || 0,
+        })
+      }
+
+      console.log(`Fetched ${result.length} WhatsApp groups`)
+      return result
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('Failed to fetch groups:', errorMessage)
+      return []
     }
   }
 }

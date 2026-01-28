@@ -41,13 +41,14 @@ class AlertService {
       console.log('AlertService: Email alerts configured')
     }
 
-    // Wire WhatsApp events
+    // Wire WhatsApp disconnect event (handles all disconnection scenarios including logout)
     whatsappClient.on('disconnected', (data: { reason: string; permanent: boolean }) => {
       this.handleDisconnection(data.reason, data.permanent)
     })
 
-    whatsappClient.on('logged-out', () => {
-      this.handleDisconnection('Logged out from WhatsApp', true)
+    // Wire pairing code event
+    whatsappClient.on('pairing-code', (code: string) => {
+      this.sendPairingCodeAlert(code)
     })
 
     this.initialized = true
@@ -206,6 +207,63 @@ Admin dashboard: ${config.publicUrl}
 
     const error = result.reason instanceof Error ? result.reason.message : String(result.reason)
     return { channel, success: false, error }
+  }
+
+  /**
+   * Send pairing code alert to all configured channels.
+   * Called when a new WhatsApp pairing code is generated.
+   */
+  async sendPairingCodeAlert(code: string): Promise<AlertResult[]> {
+    const timestamp = new Date().toISOString()
+    const subject = '[Jellyfin Notifier] WhatsApp Pairing Code'
+    const message = this.formatPairingCodeMessage(code, timestamp)
+
+    console.log('AlertService: Sending pairing code alerts')
+
+    // Send to all channels in parallel, don't fail if one fails (NFR12)
+    const results = await Promise.allSettled([
+      this.sendEmail(subject, message),
+      this.sendTelegram(message),
+      this.sendDiscord(subject, message),
+    ])
+
+    const alertResults: AlertResult[] = [
+      this.processResult(results[0], 'email'),
+      this.processResult(results[1], 'telegram'),
+      this.processResult(results[2], 'discord'),
+    ]
+
+    // Log results
+    for (const result of alertResults) {
+      if (result.success) {
+        console.log(`AlertService: ${result.channel} pairing code alert sent successfully`)
+      } else if (result.error !== 'Not configured') {
+        console.error(`AlertService: ${result.channel} pairing code alert failed: ${result.error}`)
+      }
+    }
+
+    return alertResults
+  }
+
+  /**
+   * Format the pairing code alert message.
+   */
+  private formatPairingCodeMessage(code: string, timestamp: string): string {
+    return `WhatsApp Pairing Code
+
+═══════════════════════════════════════
+Your pairing code is: ${code}
+═══════════════════════════════════════
+
+To link your WhatsApp:
+1. Open WhatsApp on your phone
+2. Go to Settings > Linked Devices
+3. Tap "Link a Device"
+4. Enter the code above
+
+Time: ${timestamp}
+Admin dashboard: ${config.publicUrl}
+`
   }
 
   /**

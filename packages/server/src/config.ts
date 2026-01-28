@@ -4,7 +4,7 @@ export interface Config {
   adminPassword: string
   jellyfinUrl: string
   webhookSecret: string
-  whatsappGroupId: string
+  whatsappPhoneNumber: string
   aggregationWindowMinutes: number
   publicUrl: string
   smtpHost: string
@@ -35,7 +35,7 @@ export const config: Config = {
   adminPassword: getEnv('ADMIN_PASSWORD', 'changeme'),
   jellyfinUrl: getEnv('JELLYFIN_URL', 'http://localhost:8096'),
   webhookSecret: getEnv('WEBHOOK_SECRET', ''),
-  whatsappGroupId: getEnv('WHATSAPP_GROUP_ID', ''),
+  whatsappPhoneNumber: getEnv('WHATSAPP_PHONE_NUMBER', ''),
   aggregationWindowMinutes: getEnvNumber('AGGREGATION_WINDOW_MINUTES', 15),
   publicUrl: getEnv('PUBLIC_URL', 'http://localhost:3000'),
   smtpHost: getEnv('SMTP_HOST', ''),

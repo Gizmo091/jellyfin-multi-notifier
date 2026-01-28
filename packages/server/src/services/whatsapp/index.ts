@@ -1,1 +1,1 @@
-export { whatsappClient, type WhatsAppStatus } from './client.js'
+export { whatsappClient, type WhatsAppStatus, type WhatsAppGroup } from './client.js'

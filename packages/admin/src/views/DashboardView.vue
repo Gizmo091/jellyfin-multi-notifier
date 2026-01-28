@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { apiClient, type WhatsAppStatus, type QueueStatus, type AggregationStatus, type ServiceStatus } from '../api/client'
+import QRCode from 'qrcode'
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -13,6 +14,8 @@ const serviceStatus = ref<ServiceStatus | null>(null)
 const phoneNumber = ref('')
 const connecting = ref(false)
 const pairingCode = ref<string | null>(null)
+const qrCodeDataUrl = ref<string | null>(null)
+const connectingQR = ref(false)
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
@@ -29,6 +32,11 @@ async function loadData() {
       whatsappStatus.value = waResponse.data
       if (waResponse.data.pairingCode) {
         pairingCode.value = waResponse.data.pairingCode
+      }
+      if (waResponse.data.qrCode) {
+        generateQRCodeImage(waResponse.data.qrCode)
+      } else {
+        qrCodeDataUrl.value = null
       }
     }
     if (queueResponse.success) {
@@ -54,6 +62,7 @@ async function connectWhatsApp() {
 
   connecting.value = true
   pairingCode.value = null
+  qrCodeDataUrl.value = null
 
   const response = await apiClient.connectWhatsApp(phoneNumber.value)
 
@@ -63,6 +72,37 @@ async function connectWhatsApp() {
     pairingCode.value = response.data.pairingCode
   } else {
     error.value = response.error
+  }
+}
+
+async function connectWhatsAppQR() {
+  connectingQR.value = true
+  pairingCode.value = null
+  qrCodeDataUrl.value = null
+  error.value = null
+
+  const response = await apiClient.connectWhatsAppQR()
+
+  connectingQR.value = false
+
+  if (response.success) {
+    if (response.data.qrCode) {
+      await generateQRCodeImage(response.data.qrCode)
+    }
+    // QR code will be updated via the status polling
+  } else {
+    error.value = response.error
+  }
+}
+
+async function generateQRCodeImage(qrData: string) {
+  try {
+    qrCodeDataUrl.value = await QRCode.toDataURL(qrData, {
+      width: 256,
+      margin: 2,
+    })
+  } catch (err) {
+    console.error('Failed to generate QR code:', err)
   }
 }
 
@@ -190,28 +230,60 @@ onUnmounted(() => {
       <div v-if="!whatsappStatus?.connected" class="bg-white rounded-lg shadow p-6">
         <h3 class="text-lg font-semibold mb-4">Connect WhatsApp</h3>
 
-        <div v-if="pairingCode" class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+        <!-- QR Code Display -->
+        <div v-if="qrCodeDataUrl" class="bg-white border border-gray-200 rounded-lg p-6 mb-4 text-center">
+          <p class="text-sm text-gray-600 mb-4">Scan this QR code with WhatsApp:</p>
+          <img :src="qrCodeDataUrl" alt="WhatsApp QR Code" class="mx-auto mb-4" />
+          <p class="text-xs text-gray-500">WhatsApp > Linked Devices > Link a Device > Scan QR Code</p>
+        </div>
+
+        <!-- Pairing Code Display -->
+        <div v-else-if="pairingCode" class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
           <p class="text-sm text-gray-600 mb-2">Enter this code in WhatsApp:</p>
           <p class="text-2xl font-mono font-bold text-green-700">{{ pairingCode }}</p>
           <p class="text-xs text-gray-500 mt-2">WhatsApp > Linked Devices > Link a Device</p>
         </div>
 
-        <form @submit.prevent="connectWhatsApp" class="flex gap-4">
-          <input
-            v-model="phoneNumber"
-            type="text"
-            placeholder="Phone number (e.g., 33612345678)"
-            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            :disabled="connecting"
-          />
-          <button
-            type="submit"
-            :disabled="connecting || !phoneNumber"
-            class="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {{ connecting ? 'Connecting...' : 'Connect' }}
-          </button>
-        </form>
+        <!-- Connection Options -->
+        <div class="space-y-4">
+          <!-- QR Code Method -->
+          <div>
+            <button
+              @click="connectWhatsAppQR"
+              :disabled="connectingQR || connecting"
+              class="w-full bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {{ connectingQR ? 'Generating QR Code...' : 'Connect with QR Code (Recommended)' }}
+            </button>
+          </div>
+
+          <div class="relative">
+            <div class="absolute inset-0 flex items-center">
+              <div class="w-full border-t border-gray-300"></div>
+            </div>
+            <div class="relative flex justify-center text-sm">
+              <span class="px-2 bg-white text-gray-500">or use pairing code</span>
+            </div>
+          </div>
+
+          <!-- Pairing Code Method -->
+          <form @submit.prevent="connectWhatsApp" class="flex gap-4">
+            <input
+              v-model="phoneNumber"
+              type="text"
+              placeholder="Phone number (e.g., 33612345678)"
+              class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              :disabled="connecting || connectingQR"
+            />
+            <button
+              type="submit"
+              :disabled="connecting || connectingQR || !phoneNumber"
+              class="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {{ connecting ? 'Connecting...' : 'Connect' }}
+            </button>
+          </form>
+        </div>
       </div>
 
       <!-- Recent Activity -->

@@ -38,6 +38,7 @@ export interface WhatsAppStatus {
   phoneNumber?: string
   lastConnected?: string
   pairingCode?: string
+  qrCode?: string
   error?: string
   disconnectReason?: string
   isReconnecting?: boolean
@@ -82,7 +83,7 @@ export interface AlertChannels {
 
 export interface ConfigStatus {
   jellyfinUrl: string
-  whatsappGroupId: string
+  whatsappGroupId: string | null
   aggregationWindowMinutes: number
   publicUrl: string
   alerts: {
@@ -90,6 +91,25 @@ export interface ConfigStatus {
     telegramConfigured: boolean
     discordConfigured: boolean
   }
+}
+
+export interface WhatsAppGroup {
+  id: string
+  name: string
+  image?: string
+  isCommunity: boolean
+  linkedParent?: string
+  participantCount: number
+}
+
+export interface WhatsAppGroupsResponse {
+  communities: Array<{
+    id: string
+    name: string
+    image?: string
+    groups: WhatsAppGroup[]
+  }>
+  standaloneGroups: WhatsAppGroup[]
 }
 
 export interface AlertTestResult {
@@ -150,6 +170,12 @@ export const apiClient = {
     })
   },
 
+  async connectWhatsAppQR(): Promise<ApiResponse<{ message: string; qrCode?: string }>> {
+    return request<{ message: string; qrCode?: string }>('/whatsapp/connect-qr', {
+      method: 'POST',
+    })
+  },
+
   async disconnectWhatsApp(): Promise<ApiResponse<{ message: string }>> {
     return request<{ message: string }>('/whatsapp/disconnect', {
       method: 'POST',
@@ -186,5 +212,16 @@ export const apiClient = {
 
   async getStatus(): Promise<ApiResponse<ServiceStatus>> {
     return request<ServiceStatus>('/status')
+  },
+
+  async getWhatsAppGroups(): Promise<ApiResponse<WhatsAppGroupsResponse>> {
+    return request<WhatsAppGroupsResponse>('/whatsapp/groups')
+  },
+
+  async setWhatsAppGroup(groupId: string): Promise<ApiResponse<{ groupId: string }>> {
+    return request<{ groupId: string }>('/config/whatsapp-group', {
+      method: 'POST',
+      body: JSON.stringify({ groupId }),
+    })
   },
 }

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events'
 import { queueService, QueueMessage } from '../queue/index.js'
 import { whatsappClient } from '../whatsapp/client.js'
-import { config } from '../../config.js'
+import { settingsService } from '../settings/index.js'
 
 /**
  * Retry service for managing automatic message retry with exponential backoff.
@@ -105,15 +105,21 @@ class RetryService extends EventEmitter {
 
     console.log(`Executing retry for message ${messageId} (attempt ${message.retryCount})`)
 
+    const groupId = settingsService.getWhatsAppGroupId()
+    if (!groupId) {
+      console.warn('WhatsApp group ID not configured, cannot retry')
+      return
+    }
+
     let success: boolean
     if (message.imageUrl) {
       success = await whatsappClient.sendImageMessage(
-        config.whatsappGroupId,
+        groupId,
         message.imageUrl,
         message.content
       )
     } else {
-      success = await whatsappClient.sendTextMessage(config.whatsappGroupId, message.content)
+      success = await whatsappClient.sendTextMessage(groupId, message.content)
     }
 
     if (success) {
@@ -189,15 +195,21 @@ class RetryService extends EventEmitter {
 
     console.log(`Processing queued message ${message.id} (retry count: ${message.retryCount})`)
 
+    const groupId = settingsService.getWhatsAppGroupId()
+    if (!groupId) {
+      console.warn('WhatsApp group ID not configured, cannot process message')
+      return
+    }
+
     let success: boolean
     if (message.imageUrl) {
       success = await whatsappClient.sendImageMessage(
-        config.whatsappGroupId,
+        groupId,
         message.imageUrl,
         message.content
       )
     } else {
-      success = await whatsappClient.sendTextMessage(config.whatsappGroupId, message.content)
+      success = await whatsappClient.sendTextMessage(groupId, message.content)
     }
 
     if (success) {

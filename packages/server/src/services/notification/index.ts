@@ -5,6 +5,7 @@ import { aggregationService } from '../aggregation/index.js'
 import { queueService } from '../queue/index.js'
 import { retryService } from '../retry/index.js'
 import { statusService } from '../status/index.js'
+import { settingsService } from '../settings/index.js'
 
 /**
  * Notification service for formatting and sending WhatsApp messages.
@@ -51,7 +52,8 @@ class NotificationService {
       return false
     }
 
-    if (!config.whatsappGroupId) {
+    const groupId = settingsService.getWhatsAppGroupId()
+    if (!groupId) {
       console.warn('WhatsApp group ID not configured, skipping notification')
       return false
     }
@@ -59,7 +61,7 @@ class NotificationService {
     const message = this.formatMoviesMessage(items)
     const coverUrl = items.find((i) => i.coverUrl)?.coverUrl
 
-    return this.sendOrQueue(message, 'movie', coverUrl, items.length)
+    return this.sendOrQueue(message, 'movie', coverUrl, items.length, groupId)
   }
 
   /**
@@ -72,7 +74,8 @@ class NotificationService {
       return false
     }
 
-    if (!config.whatsappGroupId) {
+    const groupId = settingsService.getWhatsAppGroupId()
+    if (!groupId) {
       console.warn('WhatsApp group ID not configured, skipping notification')
       return false
     }
@@ -80,7 +83,7 @@ class NotificationService {
     const message = this.formatSeriesMessage(items)
     const coverUrl = items.find((i) => i.coverUrl)?.coverUrl
 
-    return this.sendOrQueue(message, 'series', coverUrl, items.length)
+    return this.sendOrQueue(message, 'series', coverUrl, items.length, groupId)
   }
 
   /**
@@ -88,8 +91,14 @@ class NotificationService {
    * Schedules retry with exponential backoff on failure.
    * Records notification in status service for tracking.
    */
-  private async sendOrQueue(message: string, mediaType: MediaType, imageUrl?: string, itemCount = 1): Promise<boolean> {
+  private async sendOrQueue(message: string, mediaType: MediaType, imageUrl?: string, itemCount = 1, groupId?: string): Promise<boolean> {
     const notificationType = mediaType === 'movie' ? 'movies' : 'series'
+    const targetGroupId = groupId || settingsService.getWhatsAppGroupId()
+
+    if (!targetGroupId) {
+      console.warn('WhatsApp group ID not configured, skipping notification')
+      return false
+    }
 
     if (!whatsappClient.isConnected()) {
       console.log(`WhatsApp disconnected, queuing ${mediaType} notification`)
@@ -103,9 +112,9 @@ class NotificationService {
 
     let success: boolean
     if (imageUrl) {
-      success = await whatsappClient.sendImageMessage(config.whatsappGroupId, imageUrl, message)
+      success = await whatsappClient.sendImageMessage(targetGroupId, imageUrl, message)
     } else {
-      success = await whatsappClient.sendTextMessage(config.whatsappGroupId, message)
+      success = await whatsappClient.sendTextMessage(targetGroupId, message)
     }
 
     if (!success) {
@@ -129,6 +138,12 @@ class NotificationService {
       return false
     }
 
+    const groupId = settingsService.getWhatsAppGroupId()
+    if (!groupId) {
+      console.warn('WhatsApp group ID not configured, cannot send queued message')
+      return false
+    }
+
     if (!whatsappClient.isConnected()) {
       console.log(`WhatsApp disconnected, cannot send queued message ${messageId}`)
       return false
@@ -136,9 +151,9 @@ class NotificationService {
 
     let success: boolean
     if (msg.imageUrl) {
-      success = await whatsappClient.sendImageMessage(config.whatsappGroupId, msg.imageUrl, msg.content)
+      success = await whatsappClient.sendImageMessage(groupId, msg.imageUrl, msg.content)
     } else {
-      success = await whatsappClient.sendTextMessage(config.whatsappGroupId, msg.content)
+      success = await whatsappClient.sendTextMessage(groupId, msg.content)
     }
 
     if (success) {

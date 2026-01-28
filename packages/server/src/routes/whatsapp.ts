@@ -1,7 +1,17 @@
 import { FastifyInstance } from 'fastify'
-import { whatsappClient } from '../services/whatsapp/index.js'
-import { config } from '../config.js'
+import { whatsappClient, WhatsAppGroup } from '../services/whatsapp/index.js'
+import { settingsService } from '../services/settings/index.js'
 import type { ApiResponse, WhatsAppStatus } from '../types/index.js'
+
+interface WhatsAppGroupsResponse {
+  communities: Array<{
+    id: string
+    name: string
+    image?: string
+    groups: WhatsAppGroup[]
+  }>
+  standaloneGroups: WhatsAppGroup[]
+}
 
 interface ConnectRequestBody {
   phoneNumber: string
@@ -122,6 +132,49 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
   )
 
   /**
+   * POST /api/whatsapp/connect-qr
+   * Initiates a WhatsApp connection with QR code.
+   * The QR code will be available in the status endpoint.
+   */
+  fastify.post('/api/whatsapp/connect-qr', async (): Promise<ApiResponse<{ message: string; qrCode?: string }>> => {
+    // Check if already connected
+    if (whatsappClient.isConnected()) {
+      return {
+        success: true,
+        data: {
+          message: 'WhatsApp is already connected',
+        },
+      }
+    }
+
+    try {
+      fastify.log.info('Initiating WhatsApp QR code connection')
+
+      // Start connection without phone number (QR mode)
+      await whatsappClient.connect()
+
+      // Get the current status which may include the QR code
+      const status = whatsappClient.getStatus()
+
+      return {
+        success: true,
+        data: {
+          message: 'QR code connection initiated. Check status for QR code.',
+          qrCode: status.qrCode,
+        },
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Connection failed'
+      fastify.log.error({ error: errorMessage }, 'WhatsApp QR connection failed')
+
+      return {
+        success: false,
+        error: errorMessage,
+      }
+    }
+  })
+
+  /**
    * POST /api/whatsapp/disconnect
    * Disconnects from WhatsApp gracefully.
    */
@@ -158,6 +211,66 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Reconnect failed'
+      return {
+        success: false,
+        error: errorMessage,
+      }
+    }
+  })
+
+  /**
+   * GET /api/whatsapp/groups
+   * Returns all WhatsApp groups organized by community hierarchy.
+   */
+  fastify.get('/api/whatsapp/groups', async (): Promise<ApiResponse<WhatsAppGroupsResponse>> => {
+    if (!whatsappClient.isConnected()) {
+      return {
+        success: false,
+        error: 'WhatsApp is not connected',
+      }
+    }
+
+    try {
+      const allGroups = await whatsappClient.getGroups()
+
+      // Separate communities and groups
+      const communities = allGroups.filter((g) => g.isCommunity)
+      const nonCommunityGroups = allGroups.filter((g) => !g.isCommunity)
+
+      // Build community hierarchy
+      const communityMap = new Map<
+        string,
+        { id: string; name: string; image?: string; groups: WhatsAppGroup[] }
+      >()
+
+      for (const community of communities) {
+        communityMap.set(community.id, {
+          id: community.id,
+          name: community.name,
+          image: community.image,
+          groups: [],
+        })
+      }
+
+      // Assign groups to their parent communities
+      const standaloneGroups: WhatsAppGroup[] = []
+      for (const group of nonCommunityGroups) {
+        if (group.linkedParent && communityMap.has(group.linkedParent)) {
+          communityMap.get(group.linkedParent)!.groups.push(group)
+        } else {
+          standaloneGroups.push(group)
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          communities: Array.from(communityMap.values()),
+          standaloneGroups,
+        },
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch groups'
       return {
         success: false,
         error: errorMessage,
@@ -204,12 +317,12 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       // Determine target group
-      const targetGroup = groupId || config.whatsappGroupId
+      const targetGroup = groupId || settingsService.getWhatsAppGroupId()
 
       if (!targetGroup) {
         return {
           success: false,
-          error: 'No group ID provided and WHATSAPP_GROUP_ID not configured',
+          error: 'No group ID provided and no group configured in settings',
         }
       }
 
@@ -288,12 +401,12 @@ export async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       // Determine target group
-      const targetGroup = groupId || config.whatsappGroupId
+      const targetGroup = groupId || settingsService.getWhatsAppGroupId()
 
       if (!targetGroup) {
         return {
           success: false,
-          error: 'No group ID provided and WHATSAPP_GROUP_ID not configured',
+          error: 'No group ID provided and no group configured in settings',
         }
       }
 

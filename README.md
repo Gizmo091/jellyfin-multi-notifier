@@ -48,11 +48,12 @@ docker-compose up -d
 
 ### First-time Setup
 
-1. Start the service
-2. Check logs for WhatsApp pairing code
-3. On your phone: WhatsApp > Linked Devices > Link a Device
-4. Enter the pairing code
-5. Configure target group in admin UI (http://localhost:3000)
+1. Set `WHATSAPP_PHONE_NUMBER` in your `.env` file (international format without +, e.g., 33612345678)
+2. Start the service
+3. Pairing code will be sent to your configured alert channels (email, Discord, Telegram)
+4. On your phone: WhatsApp > Linked Devices > Link a Device
+5. Enter the pairing code
+6. Go to Configuration page in admin UI (http://localhost:3000) and select your target WhatsApp group
 
 ## Configuration
 
@@ -64,7 +65,7 @@ docker-compose up -d
 | `ADMIN_PASSWORD` | Admin UI password | Yes |
 | `JELLYFIN_URL` | Jellyfin server URL | Yes |
 | `WEBHOOK_SECRET` | Shared secret for webhook validation | Yes |
-| `WHATSAPP_GROUP_ID` | Target WhatsApp group ID | Yes |
+| `WHATSAPP_PHONE_NUMBER` | Phone number for auto-connect (international format without +) | No |
 | `TMDB_API_KEY` | TMDB API key for covers | No |
 | `PUBLIC_URL` | Public URL for redirect links (default: http://localhost:3000) | No |
 | `AGGREGATION_WINDOW_MINUTES` | Aggregation window duration (default: 15) | No |
