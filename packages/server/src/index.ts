@@ -110,15 +110,17 @@ retryService.initialize()
 // Initialize alert service (sends notifications on WhatsApp disconnect)
 alertService.initialize()
 
-// Auto-connect WhatsApp if phone number is configured
-if (config.whatsappPhoneNumber) {
-  // Strip leading + if present (Baileys expects number without +)
-  const phoneNumber = config.whatsappPhoneNumber.replace(/^\+/, '')
-  console.log('Auto-connecting WhatsApp with configured phone number...')
-  whatsappClient.connect(phoneNumber).catch((err) => {
-    console.error('WhatsApp auto-connect failed:', err)
-  })
+// Auto-connect WhatsApp on startup
+// If phone number is configured, use pairing code. Otherwise, show QR code.
+const phoneNumber = config.whatsappPhoneNumber?.replace(/^\+/, '') || undefined
+if (phoneNumber) {
+  console.log('Auto-connecting WhatsApp with pairing code...')
+} else {
+  console.log('Auto-connecting WhatsApp with QR code...')
 }
+whatsappClient.connect(phoneNumber).catch((err) => {
+  console.error('WhatsApp auto-connect failed:', err)
+})
 
 // Start server
 const start = async () => {
