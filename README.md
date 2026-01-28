@@ -98,15 +98,13 @@ docker compose up -d
 
 #### WhatsApp Setup
 
-> **Note**: Pairing code connection is currently experiencing issues. QR code connection is recommended.
-
-**Option 1: QR Code (Recommended)**
+**Option 1: QR Code**
 - Leave `WHATSAPP_PHONE_NUMBER` empty in your `.env` file
 - Click "Connect WhatsApp" in the admin UI
 - A QR code will be displayed
 - On your phone: WhatsApp > Linked Devices > Link a Device > Scan QR Code
 
-**Option 2: Pairing Code (Unstable)**
+**Option 2: Pairing Code**
 - Set `WHATSAPP_PHONE_NUMBER` in your `.env` file (international format without +, e.g., 33612345678)
 - Pairing code will be sent to your configured alert channels (email, Discord, Telegram)
 - On your phone: WhatsApp > Linked Devices > Link a Device > Link with phone number

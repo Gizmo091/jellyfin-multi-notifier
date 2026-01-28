@@ -46,6 +46,8 @@ class WhatsAppClient extends EventEmitter {
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
   private isConnecting = false
+  private pendingPhoneNumber: string | null = null // Phone number waiting for pairing
+  private pairingCodeRequested = false // Flag to prevent duplicate pairing code requests
 
   constructor() {
     super()
@@ -100,6 +102,26 @@ class WhatsAppClient extends EventEmitter {
           this.status.qrCode = qr
           console.log('New QR code generated - scan with WhatsApp')
           this.emit('qr', qr)
+
+          // If phone number is provided, request pairing code now (per Baileys docs)
+          // "you should wait at least until the connecting/QR event"
+          if (this.pendingPhoneNumber && !this.pairingCodeRequested && this.socket) {
+            this.pairingCodeRequested = true
+            try {
+              const code = await this.socket.requestPairingCode(this.pendingPhoneNumber)
+              this.status.pairingCode = code
+              console.log('═'.repeat(50))
+              console.log(`WhatsApp Pairing Code: ${code}`)
+              console.log('Enter this code in WhatsApp > Linked Devices > Link a Device')
+              console.log('═'.repeat(50))
+              this.emit('pairing-code', code)
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : 'Failed to get pairing code'
+              console.error('Failed to request pairing code:', errorMessage)
+              this.status.error = errorMessage
+              this.emit('pairing-error', errorMessage)
+            }
+          }
         }
 
         if (connection === 'close') {
@@ -115,6 +137,14 @@ class WhatsAppClient extends EventEmitter {
 
           logger.warn('WhatsApp', `Disconnected: ${reason}`, { statusCode, reason })
 
+          // Handle restartRequired - WhatsApp forces disconnect after successful pairing
+          if (statusCode === DisconnectReason.restartRequired) {
+            logger.info('WhatsApp', 'Restart required after pairing - reconnecting...')
+            this.pairingCodeRequested = false // Reset for fresh connection
+            setTimeout(() => this.connect(this.pendingPhoneNumber || undefined), 1000)
+            return
+          }
+
           if (statusCode === DisconnectReason.loggedOut) {
             // Session invalidated, need new pairing
             logger.warn('WhatsApp', 'Logged out - session invalidated. Need to re-pair.')
@@ -123,9 +153,10 @@ class WhatsAppClient extends EventEmitter {
             this.emit('disconnected', { reason, permanent: true })
             // Clear session files and retry connection with fresh session
             await this.clearSession()
-            if (phoneNumber) {
+            this.pairingCodeRequested = false // Reset for fresh pairing
+            if (this.pendingPhoneNumber) {
               console.log('Retrying connection with fresh session...')
-              setTimeout(() => this.connect(phoneNumber), 2000)
+              setTimeout(() => this.connect(this.pendingPhoneNumber || undefined), 2000)
             }
           } else if (statusCode !== DisconnectReason.connectionClosed) {
             // Try to reconnect for other errors
@@ -134,7 +165,7 @@ class WhatsAppClient extends EventEmitter {
               this.status.isReconnecting = true
               const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000)
               console.log(`Attempting reconnect in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
-              setTimeout(() => this.connect(phoneNumber), delay)
+              setTimeout(() => this.connect(this.pendingPhoneNumber || undefined), delay)
             } else {
               console.log('Max reconnect attempts reached')
               this.status.error = 'Connection lost. Max reconnect attempts reached.'
@@ -157,6 +188,8 @@ class WhatsAppClient extends EventEmitter {
           this.status.isReconnecting = false
           this.reconnectAttempts = 0
           this.isConnecting = false
+          this.pendingPhoneNumber = null // Clear pending phone number after successful connection
+          this.pairingCodeRequested = false
           logger.info('WhatsApp', `Connected successfully as ${this.status.phoneNumber}`, { phoneNumber: this.status.phoneNumber })
           this.emit('connected', { phoneNumber: this.status.phoneNumber })
         }
@@ -165,37 +198,14 @@ class WhatsAppClient extends EventEmitter {
       // Save credentials on update
       this.socket.ev.on('creds.update', saveCreds)
 
-      // Request pairing code if not registered and phone number provided
+      // Store phone number for pairing code request (will be requested on QR event)
       if (!state.creds.registered && phoneNumber) {
-        // Wait for socket to be ready (increased from 2s to 5s for stability)
-        await new Promise((resolve) => setTimeout(resolve, 5000))
-
-        // Check if socket was closed during the wait (e.g., loggedOut scenario)
-        if (!this.isConnecting) {
-          console.log('Connection was closed during setup, skipping pairing code request')
-          return null
-        }
-
-        try {
-          const code = await this.socket.requestPairingCode(phoneNumber)
-          this.status.pairingCode = code
-          this.isConnecting = false
-          console.log('═'.repeat(50))
-          console.log(`WhatsApp Pairing Code: ${code}`)
-          console.log('Enter this code in WhatsApp > Linked Devices > Link a Device')
-          console.log('═'.repeat(50))
-          // Emit pairing-code event for alert channels
-          this.emit('pairing-code', code)
-          return code
-        } catch (error) {
-          this.isConnecting = false
-          const errorMessage = error instanceof Error ? error.message : 'Failed to get pairing code'
-          console.error('Failed to request pairing code:', errorMessage)
-          this.status.error = errorMessage
-          throw error
-        }
+        this.pendingPhoneNumber = phoneNumber
+        this.pairingCodeRequested = false
+        logger.info('WhatsApp', 'Waiting for QR event to request pairing code...', { phoneNumber })
       }
 
+      // Return null - pairing code will be emitted via 'pairing-code' event when ready
       return null
     } catch (error) {
       this.isConnecting = false
@@ -218,6 +228,8 @@ class WhatsAppClient extends EventEmitter {
         }
         console.log('WhatsApp session cleared')
       }
+      // Reset pairing state
+      this.pairingCodeRequested = false
     } catch (error) {
       console.error('Failed to clear session:', error)
     }
@@ -231,6 +243,8 @@ class WhatsAppClient extends EventEmitter {
       this.socket.end(undefined)
       this.socket = null
       this.status.connected = false
+      this.pendingPhoneNumber = null
+      this.pairingCodeRequested = false
       console.log('WhatsApp disconnected')
     }
   }
