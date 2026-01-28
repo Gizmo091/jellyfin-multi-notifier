@@ -11,6 +11,9 @@ import { logger } from '../logger/index.js'
 const DATA_DIR = process.env.NODE_ENV === 'production' ? '/app/data' : './data'
 const DB_PATH = path.join(DATA_DIR, 'queue.db')
 
+// Minimum extension time when adding items near window end (5 minutes)
+const MIN_EXTENSION_MS = 5 * 60 * 1000
+
 interface AggregationWindow {
   items: MediaEvent[]
   timer: NodeJS.Timeout | null
@@ -207,6 +210,7 @@ class AggregationService extends EventEmitter {
   /**
    * Add an item to a window and start the timer if needed.
    * Deduplicates by jellyfinId to handle multiple webhook calls for the same item.
+   * Extends the window by 5 minutes if less than 5 minutes remain.
    * Persists the event to SQLite for crash recovery.
    */
   private addToWindow(window: AggregationWindow, event: MediaEvent, type: WindowKey): void {
@@ -221,11 +225,28 @@ class AggregationService extends EventEmitter {
     logger.info('Aggregation', `Added ${event.type} "${event.title}" to ${type} window`, { type: event.type, title: event.title, windowType: type, itemCount: window.items.length })
 
     if (!window.timer) {
+      // Start new window
       const durationMs = this.getWindowDurationMs(type)
       const durationMinutes = durationMs / 60000
       window.startTime = new Date()
       window.timer = setTimeout(() => this.flushWindow(window, type), durationMs)
       logger.info('Aggregation', `Started ${type} aggregation window (${durationMinutes} min)`, { windowType: type, durationMinutes })
+    } else if (window.startTime) {
+      // Check if we need to extend the window
+      const elapsed = Date.now() - window.startTime.getTime()
+      const totalDuration = this.getWindowDurationMs(type)
+      const remaining = totalDuration - elapsed
+
+      if (remaining < MIN_EXTENSION_MS) {
+        // Extend window to 5 minutes from now
+        clearTimeout(window.timer)
+        window.timer = setTimeout(() => this.flushWindow(window, type), MIN_EXTENSION_MS)
+        logger.info('Aggregation', `Extended ${type} window by 5 min (was ${Math.round(remaining / 1000)}s remaining)`, {
+          windowType: type,
+          previousRemainingSeconds: Math.round(remaining / 1000),
+          newRemainingSeconds: MIN_EXTENSION_MS / 1000,
+        })
+      }
     }
 
     // Persist to database for crash recovery
