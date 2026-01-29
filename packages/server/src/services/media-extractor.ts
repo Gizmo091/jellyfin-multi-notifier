@@ -136,6 +136,13 @@ export function extractMediaEvent(payload: JellyfinWebhookPayload): MediaEvent |
     console.warn('Jellyfin item missing Name field')
   }
 
+  // Extract episode-specific metadata for grouping
+  const episodeMetadata = type === 'episode' ? {
+    seriesName: Item.SeriesName ? decodeHtmlEntities(Item.SeriesName) : undefined,
+    seasonNumber: Item.ParentIndexNumber,
+    episodeNumber: Item.IndexNumber,
+  } : {}
+
   return {
     id: randomUUID(),
     type,
@@ -145,5 +152,6 @@ export function extractMediaEvent(payload: JellyfinWebhookPayload): MediaEvent |
     jellyfinId: Item.Id ?? 'unknown',
     eventType,
     timestamp: new Date(),
+    ...episodeMetadata,
   }
 }

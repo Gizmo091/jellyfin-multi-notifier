@@ -2,6 +2,111 @@ import type { MediaEvent, ChannelType, SupportedLanguage } from '../../types/ind
 import type { DiscordEmbed } from '../senders/types.js'
 import { config } from '../../config.js'
 
+/**
+ * Represents a range of consecutive episodes.
+ */
+interface EpisodeRange {
+  start: number
+  end: number
+}
+
+/**
+ * Represents a grouped set of episodes for a series/season.
+ */
+interface GroupedEpisodes {
+  seriesName: string
+  seasonNumber: number
+  ranges: EpisodeRange[]
+  // Keep original items for cover URLs etc.
+  items: MediaEvent[]
+}
+
+/**
+ * Groups episodes by series and season, then detects consecutive ranges.
+ * Non-episode items are returned as-is.
+ */
+function groupEpisodes(items: MediaEvent[]): { grouped: GroupedEpisodes[]; nonEpisodes: MediaEvent[] } {
+  const nonEpisodes: MediaEvent[] = []
+  const episodeMap = new Map<string, MediaEvent[]>()
+
+  for (const item of items) {
+    if (item.type === 'episode' && item.seriesName && item.seasonNumber !== undefined && item.episodeNumber !== undefined) {
+      const key = `${item.seriesName}::${item.seasonNumber}`
+      if (!episodeMap.has(key)) {
+        episodeMap.set(key, [])
+      }
+      episodeMap.get(key)!.push(item)
+    } else {
+      nonEpisodes.push(item)
+    }
+  }
+
+  const grouped: GroupedEpisodes[] = []
+
+  for (const [key, episodes] of episodeMap) {
+    const [seriesName, seasonStr] = key.split('::')
+    const seasonNumber = parseInt(seasonStr, 10)
+
+    // Sort episodes by episode number
+    episodes.sort((a, b) => (a.episodeNumber ?? 0) - (b.episodeNumber ?? 0))
+
+    // Detect consecutive ranges
+    const ranges: EpisodeRange[] = []
+    let currentRange: EpisodeRange | null = null
+
+    for (const ep of episodes) {
+      const epNum = ep.episodeNumber!
+      if (currentRange === null) {
+        currentRange = { start: epNum, end: epNum }
+      } else if (epNum === currentRange.end + 1) {
+        currentRange.end = epNum
+      } else {
+        ranges.push(currentRange)
+        currentRange = { start: epNum, end: epNum }
+      }
+    }
+    if (currentRange) {
+      ranges.push(currentRange)
+    }
+
+    grouped.push({ seriesName, seasonNumber, ranges, items: episodes })
+  }
+
+  // Sort groups by series name then season
+  grouped.sort((a, b) => {
+    const nameCompare = a.seriesName.localeCompare(b.seriesName)
+    if (nameCompare !== 0) return nameCompare
+    return a.seasonNumber - b.seasonNumber
+  })
+
+  return { grouped, nonEpisodes }
+}
+
+/**
+ * Formats episode ranges as a compact string.
+ * Examples: "E03", "E03-E05", "E03, E05, E07-E10"
+ */
+function formatEpisodeRanges(ranges: EpisodeRange[]): string {
+  return ranges.map(r => {
+    const startStr = r.start.toString().padStart(2, '0')
+    if (r.start === r.end) {
+      return `E${startStr}`
+    }
+    const endStr = r.end.toString().padStart(2, '0')
+    return `E${startStr}-E${endStr}`
+  }).join(', ')
+}
+
+/**
+ * Formats a grouped episode entry.
+ * Example: "Breaking Bad S02E03-E10"
+ */
+function formatGroupedEpisode(group: GroupedEpisodes): string {
+  const seasonStr = group.seasonNumber.toString().padStart(2, '0')
+  const episodesStr = formatEpisodeRanges(group.ranges)
+  return `${group.seriesName} S${seasonStr}${episodesStr}`
+}
+
 interface MessageTemplates {
   moviesSingle: string
   moviesMultiple: string
@@ -135,6 +240,7 @@ class MessageFormatterService {
 
   /**
    * Format a notification message for series/episodes.
+   * Episodes are grouped by series/season with consecutive ranges (e.g., "S02E03-E10").
    */
   formatSeriesMessage(items: MediaEvent[], language: SupportedLanguage): string {
     const t = templates[language] || templates.en
@@ -143,7 +249,26 @@ class MessageFormatterService {
       ? t.seriesSingle
       : t.seriesMultiple.replace('{count}', items.length.toString())
 
-    const lines = items.map(item => {
+    const { grouped, nonEpisodes } = groupEpisodes(items)
+    const lines: string[] = []
+
+    // Format grouped episodes
+    for (const group of grouped) {
+      const title = formatGroupedEpisode(group)
+      let line = t.itemLine.replace('{title}', title)
+      // Use first item's redirect URL if available
+      const firstItem = group.items[0]
+      if (firstItem?.redirectUrl) {
+        const fullUrl = firstItem.redirectUrl.startsWith('http')
+          ? firstItem.redirectUrl
+          : `${config.publicUrl.replace(/\/$/, '')}${firstItem.redirectUrl}`
+        line += `\n${fullUrl}`
+      }
+      lines.push(line)
+    }
+
+    // Format non-episode items (series without episode metadata)
+    for (const item of nonEpisodes) {
       let line = t.itemLine.replace('{title}', item.title)
       if (item.redirectUrl) {
         const fullUrl = item.redirectUrl.startsWith('http')
@@ -151,8 +276,8 @@ class MessageFormatterService {
           : `${config.publicUrl.replace(/\/$/, '')}${item.redirectUrl}`
         line += `\n${fullUrl}`
       }
-      return line
-    })
+      lines.push(line)
+    }
 
     return `${header}\n\n${lines.join('\n\n')}`
   }
@@ -180,6 +305,7 @@ class MessageFormatterService {
 
   /**
    * Format a notification message for removed series/episodes.
+   * Episodes are grouped by series/season with consecutive ranges.
    */
   formatSeriesRemovedMessage(items: MediaEvent[], language: SupportedLanguage): string {
     const t = templates[language] || templates.en
@@ -188,10 +314,19 @@ class MessageFormatterService {
       ? t.seriesRemovedSingle
       : t.seriesRemovedMultiple.replace('{count}', items.length.toString())
 
-    const lines = items.map(item => {
-      const line = t.itemLine.replace('{title}', item.title)
-      return line
-    })
+    const { grouped, nonEpisodes } = groupEpisodes(items)
+    const lines: string[] = []
+
+    // Format grouped episodes
+    for (const group of grouped) {
+      const title = formatGroupedEpisode(group)
+      lines.push(t.itemLine.replace('{title}', title))
+    }
+
+    // Format non-episode items
+    for (const item of nonEpisodes) {
+      lines.push(t.itemLine.replace('{title}', item.title))
+    }
 
     return `${header}\n\n${lines.join('\n')}`
   }
@@ -299,19 +434,51 @@ class MessageFormatterService {
     // Convert *bold* to **bold** for Discord markdown
     const title = header.replace(/\*([^*]+)\*/g, '**$1**')
 
-    const lines = items.map(item => {
-      let line = t.itemLine.replace('{title}', item.title)
-      if (item.year && (type === 'movies' || type === 'movies-removed')) {
-        line += ' ' + t.withYear.replace('{year}', item.year.toString())
+    let lines: string[]
+
+    if (type === 'series' || type === 'series-removed') {
+      // Use episode grouping for series
+      const { grouped, nonEpisodes } = groupEpisodes(items)
+      lines = []
+
+      for (const group of grouped) {
+        const groupTitle = formatGroupedEpisode(group)
+        let line = t.itemLine.replace('{title}', groupTitle)
+        if (type === 'series' && group.items[0]?.redirectUrl) {
+          const fullUrl = group.items[0].redirectUrl.startsWith('http')
+            ? group.items[0].redirectUrl
+            : `${config.publicUrl.replace(/\/$/, '')}${group.items[0].redirectUrl}`
+          line += ` - [Watch](${fullUrl})`
+        }
+        lines.push(line)
       }
-      if (item.redirectUrl && (type === 'movies' || type === 'series')) {
-        const fullUrl = item.redirectUrl.startsWith('http')
-          ? item.redirectUrl
-          : `${config.publicUrl.replace(/\/$/, '')}${item.redirectUrl}`
-        line += ` - [Watch](${fullUrl})`
+
+      for (const item of nonEpisodes) {
+        let line = t.itemLine.replace('{title}', item.title)
+        if (type === 'series' && item.redirectUrl) {
+          const fullUrl = item.redirectUrl.startsWith('http')
+            ? item.redirectUrl
+            : `${config.publicUrl.replace(/\/$/, '')}${item.redirectUrl}`
+          line += ` - [Watch](${fullUrl})`
+        }
+        lines.push(line)
       }
-      return line
-    })
+    } else {
+      // Movies: no grouping needed
+      lines = items.map(item => {
+        let line = t.itemLine.replace('{title}', item.title)
+        if (item.year) {
+          line += ' ' + t.withYear.replace('{year}', item.year.toString())
+        }
+        if (type === 'movies' && item.redirectUrl) {
+          const fullUrl = item.redirectUrl.startsWith('http')
+            ? item.redirectUrl
+            : `${config.publicUrl.replace(/\/$/, '')}${item.redirectUrl}`
+          line += ` - [Watch](${fullUrl})`
+        }
+        return line
+      })
+    }
 
     const description = lines.join('\n')
 
@@ -363,19 +530,51 @@ class MessageFormatterService {
     // Convert *bold* to <b>bold</b> for Telegram HTML
     const htmlHeader = header.replace(/\*([^*]+)\*/g, '<b>$1</b>')
 
-    const lines = items.map(item => {
-      let line = t.itemLine.replace('{title}', this.escapeHtml(item.title))
-      if (item.year && (type === 'movies' || type === 'movies-removed')) {
-        line += ' ' + t.withYear.replace('{year}', item.year.toString())
+    let lines: string[]
+
+    if (type === 'series' || type === 'series-removed') {
+      // Use episode grouping for series
+      const { grouped, nonEpisodes } = groupEpisodes(items)
+      lines = []
+
+      for (const group of grouped) {
+        const groupTitle = formatGroupedEpisode(group)
+        let line = t.itemLine.replace('{title}', this.escapeHtml(groupTitle))
+        if (type === 'series' && group.items[0]?.redirectUrl) {
+          const fullUrl = group.items[0].redirectUrl.startsWith('http')
+            ? group.items[0].redirectUrl
+            : `${config.publicUrl.replace(/\/$/, '')}${group.items[0].redirectUrl}`
+          line += `\n<a href="${fullUrl}">${fullUrl}</a>`
+        }
+        lines.push(line)
       }
-      if (item.redirectUrl && (type === 'movies' || type === 'series')) {
-        const fullUrl = item.redirectUrl.startsWith('http')
-          ? item.redirectUrl
-          : `${config.publicUrl.replace(/\/$/, '')}${item.redirectUrl}`
-        line += `\n<a href="${fullUrl}">${fullUrl}</a>`
+
+      for (const item of nonEpisodes) {
+        let line = t.itemLine.replace('{title}', this.escapeHtml(item.title))
+        if (type === 'series' && item.redirectUrl) {
+          const fullUrl = item.redirectUrl.startsWith('http')
+            ? item.redirectUrl
+            : `${config.publicUrl.replace(/\/$/, '')}${item.redirectUrl}`
+          line += `\n<a href="${fullUrl}">${fullUrl}</a>`
+        }
+        lines.push(line)
       }
-      return line
-    })
+    } else {
+      // Movies: no grouping needed
+      lines = items.map(item => {
+        let line = t.itemLine.replace('{title}', this.escapeHtml(item.title))
+        if (item.year) {
+          line += ' ' + t.withYear.replace('{year}', item.year.toString())
+        }
+        if (type === 'movies' && item.redirectUrl) {
+          const fullUrl = item.redirectUrl.startsWith('http')
+            ? item.redirectUrl
+            : `${config.publicUrl.replace(/\/$/, '')}${item.redirectUrl}`
+          line += `\n<a href="${fullUrl}">${fullUrl}</a>`
+        }
+        return line
+      })
+    }
 
     const separator = (type === 'movies-removed' || type === 'series-removed') ? '\n' : '\n\n'
     return `${htmlHeader}\n\n${lines.join(separator)}`

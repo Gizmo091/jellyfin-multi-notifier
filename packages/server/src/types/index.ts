@@ -44,6 +44,10 @@ export interface MediaEvent {
   eventType: 'added' | 'removed'
   timestamp: Date
   redirectUrl?: string
+  // Episode-specific metadata for grouping
+  seriesName?: string
+  seasonNumber?: number
+  episodeNumber?: number
 }
 
 // WhatsApp Types
