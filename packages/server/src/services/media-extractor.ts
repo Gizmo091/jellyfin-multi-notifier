@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { config } from '../config.js'
+import { logger } from './logger/index.js'
 import type {
   JellyfinWebhookPayload,
   JellyfinItem,
@@ -18,8 +19,9 @@ const NOTIFICATION_TYPE_MAP: Record<string, 'added' | 'removed'> = {
 
 /**
  * Maps Jellyfin item types to our MediaType enum.
+ * Returns null for unsupported types (Season, etc.) which should be ignored.
  */
-function mapJellyfinType(jellyfinType?: string): MediaType {
+function mapJellyfinType(jellyfinType?: string): MediaType | null {
   switch (jellyfinType?.toLowerCase()) {
     case 'movie':
       return 'movie'
@@ -28,9 +30,8 @@ function mapJellyfinType(jellyfinType?: string): MediaType {
     case 'episode':
       return 'episode'
     default:
-      // Default to movie for unknown types, log warning
-      console.warn(`Unknown Jellyfin type: ${jellyfinType}, defaulting to 'movie'`)
-      return 'movie'
+      // Ignore unsupported types like Season, MusicAlbum, etc.
+      return null
   }
 }
 
@@ -114,6 +115,16 @@ export function extractMediaEvent(payload: JellyfinWebhookPayload): MediaEvent |
 
   const eventType = NOTIFICATION_TYPE_MAP[NotificationType]
   const type = mapJellyfinType(Item.Type)
+
+  // Ignore unsupported item types (Season, MusicAlbum, etc.)
+  if (type === null) {
+    logger.debug('Webhook', `Ignoring unsupported item type: ${Item.Type}`, {
+      itemType: Item.Type,
+      itemName: Item.Name,
+    })
+    return null
+  }
+
   const title = formatTitle(Item)
   const coverUrl = buildCoverUrl(Item)
 
