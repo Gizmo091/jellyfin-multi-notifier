@@ -183,22 +183,19 @@ class WhatsAppClient extends EventEmitter {
               console.log('Retrying connection with fresh session...')
               setTimeout(() => this.connect(this.pendingPhoneNumber || undefined), 2000)
             }
-          } else if (statusCode !== DisconnectReason.connectionClosed) {
-            // Try to reconnect for other errors
+          } else {
+            // Try to reconnect for all other errors (including connectionClosed)
             if (this.reconnectAttempts < this.maxReconnectAttempts) {
               this.reconnectAttempts++
               this.status.isReconnecting = true
               const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000)
-              console.log(`Attempting reconnect in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+              logger.info('WhatsApp', `Attempting reconnect in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
               setTimeout(() => this.connect(this.pendingPhoneNumber || undefined), delay)
             } else {
-              console.log('Max reconnect attempts reached')
+              logger.warn('WhatsApp', 'Max reconnect attempts reached')
               this.status.error = 'Connection lost. Max reconnect attempts reached.'
               this.emit('disconnected', { reason, permanent: true })
             }
-          } else {
-            // connectionClosed - emit once
-            this.emit('disconnected', { reason, permanent: false })
           }
         }
 
