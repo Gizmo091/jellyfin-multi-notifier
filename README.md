@@ -1,5 +1,7 @@
 # Jellyfin Media Notifier
 
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/mathieuvedie)
+
 Autonomous service that monitors a Jellyfin media server and automatically notifies multiple platforms (WhatsApp, Discord, Telegram) when new content is added or removed.
 
 ## Features
@@ -199,12 +201,6 @@ The `data/` directory contains:
 | `/api/status` | GET | Service status with uptime and activity |
 | `/r/:id` | GET | Redirect to Jellyfin content |
 | `/health` | GET | Health check |
-
-## Support
-
-If you find this project useful, you can support its development:
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/mathieuvedie)
 
 ## License
 
