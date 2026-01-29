@@ -200,6 +200,12 @@ The `data/` directory contains:
 | `/r/:id` | GET | Redirect to Jellyfin content |
 | `/health` | GET | Health check |
 
+## Support
+
+If you find this project useful, you can support its development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/mathieuvedie)
+
 ## License
 
 MIT
