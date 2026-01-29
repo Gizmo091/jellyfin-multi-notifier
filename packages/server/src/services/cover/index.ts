@@ -194,7 +194,9 @@ class CoverService {
       // Layout for 3: [tall][2]    Layout for 5: [tall][2][3]
       //               [   ][3]                   [   ][4][5]
       const rightColCount = actualCount - 1
-      const rightCols = Math.min(2, rightColCount)
+      // For 3 images: 1 column on right (2 stacked vertically)
+      // For 5 images: 2 columns on right (2x2 grid)
+      const rightCols = actualCount === 3 ? 1 : 2
       const rightRows = Math.ceil(rightColCount / rightCols)
 
       canvasWidth = CELL_WIDTH + rightCols * CELL_WIDTH
