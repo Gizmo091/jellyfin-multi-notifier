@@ -136,13 +136,47 @@ class CoverService {
   }
 
   /**
+   * Determine the optimal layout for a given number of images.
+   * Rules:
+   * 1. Perfect square (4, 9, 16...) → square grid (2x2, 3x3, 4x4...)
+   * 2. Odd number (3, 5, 7, 11...) → 1 tall image + columns of 2
+   * 3. Otherwise → best ratio to be as square as possible
+   */
+  private getLayout(count: number): { cols: number; rows: number; useSmartLayout: boolean } {
+    // Rule 1: Perfect square → square grid
+    const sqrt = Math.sqrt(count)
+    if (Number.isInteger(sqrt)) {
+      return { cols: sqrt, rows: sqrt, useSmartLayout: false }
+    }
+
+    // Rule 2: Odd number → 1 tall image + (n-1)/2 columns of 2 rows
+    if (count % 2 === 1) {
+      const rightCols = (count - 1) / 2
+      return { cols: 1 + rightCols, rows: 2, useSmartLayout: true }
+    }
+
+    // Rule 3: Even (not perfect square) → find best ratio (closest to square, prefer wider)
+    let bestCols = count
+    let bestRows = 1
+    for (let i = 2; i <= Math.sqrt(count); i++) {
+      if (count % i === 0) {
+        const cols = count / i
+        const rows = i
+        if (Math.abs(cols - rows) < Math.abs(bestCols - bestRows)) {
+          bestCols = cols
+          bestRows = rows
+        }
+      }
+    }
+    // Ensure wider than taller
+    if (bestRows > bestCols) {
+      [bestCols, bestRows] = [bestRows, bestCols]
+    }
+    return { cols: bestCols, rows: bestRows, useSmartLayout: false }
+  }
+
+  /**
    * Create a composite patchwork image from multiple cover URLs.
-   * Smart layout:
-   * - 2 images: side by side
-   * - 3 images: 1 tall (2 rows) on left + 2 stacked on right
-   * - 4 images: 2x2 grid
-   * - 5 images: 1 tall (2 rows) on left + 2x2 on right
-   * - 6+ images: 2-column grid
    * Returns a JPEG Buffer, or null if fewer than 2 URLs or all fetches fail.
    */
   async createCompositeImage(coverUrls: string[]): Promise<Buffer | null> {
@@ -152,7 +186,7 @@ class CoverService {
     if (coverUrls.length < 2) return null
 
     const count = coverUrls.length
-    const useSmartLayout = count === 3 || count === 5
+    const layout = this.getLayout(count)
 
     // Fetch all images in parallel with appropriate sizes
     const fetchResults = await Promise.allSettled(
@@ -162,7 +196,7 @@ class CoverService {
         const arrayBuffer = await response.arrayBuffer()
 
         // First image is tall (2 rows) for smart layout
-        const isTallImage = useSmartLayout && index === 0
+        const isTallImage = layout.useSmartLayout && index === 0
         const width = CELL_WIDTH
         const height = isTallImage ? CELL_HEIGHT * 2 : CELL_HEIGHT
 
@@ -181,36 +215,30 @@ class CoverService {
 
     if (images.length < 2) return null
 
-    // Recalculate if we lost images due to fetch failures
+    // Recalculate layout if we lost images due to fetch failures
     const actualCount = images.length
-    const actualSmartLayout = (actualCount === 3 || actualCount === 5) && images[0]?.isTall
+    const actualLayout = this.getLayout(actualCount)
+    const actualSmartLayout = actualLayout.useSmartLayout && images[0]?.isTall
 
     let canvasWidth: number
     let canvasHeight: number
     let compositeInputs: Array<{ input: Buffer; left: number; top: number }>
 
     if (actualSmartLayout) {
-      // Smart layout: 1 tall image + grid on right
-      // Layout for 3: [tall][2]    Layout for 5: [tall][2][3]
-      //               [   ][3]                   [   ][4][5]
-      const rightColCount = actualCount - 1
-      // For 3 images: 1 column on right (2 stacked vertically)
-      // For 5 images: 2 columns on right (2x2 grid)
-      const rightCols = actualCount === 3 ? 1 : 2
-      const rightRows = Math.ceil(rightColCount / rightCols)
-
+      // Smart layout: 1 tall image on left + grid of small images on right
+      const rightCols = (actualCount - 1) / 2
       canvasWidth = CELL_WIDTH + rightCols * CELL_WIDTH
-      canvasHeight = Math.max(2, rightRows) * CELL_HEIGHT
+      canvasHeight = 2 * CELL_HEIGHT
 
       compositeInputs = images.map((img, i) => {
         if (i === 0) {
           // First image: tall, on the left
           return { input: img.buffer, left: 0, top: 0 }
         } else {
-          // Other images: grid on the right
+          // Other images: grid on the right (2 rows)
           const gridIndex = i - 1
-          const col = gridIndex % rightCols
-          const row = Math.floor(gridIndex / rightCols)
+          const col = Math.floor(gridIndex / 2)
+          const row = gridIndex % 2
           return {
             input: img.buffer,
             left: CELL_WIDTH + col * CELL_WIDTH,
@@ -219,16 +247,15 @@ class CoverService {
         }
       })
     } else {
-      // Standard 2-column grid
-      const COLS = 2
-      const rows = Math.ceil(actualCount / COLS)
-      canvasWidth = COLS * CELL_WIDTH
+      // Standard grid layout
+      const { cols, rows } = actualLayout
+      canvasWidth = cols * CELL_WIDTH
       canvasHeight = rows * CELL_HEIGHT
 
       compositeInputs = images.map((img, i) => ({
         input: img.buffer,
-        left: (i % COLS) * CELL_WIDTH,
-        top: Math.floor(i / COLS) * CELL_HEIGHT,
+        left: (i % cols) * CELL_WIDTH,
+        top: Math.floor(i / cols) * CELL_HEIGHT,
       }))
     }
 
@@ -245,7 +272,7 @@ class CoverService {
         .jpeg({ quality: 85 })
         .toBuffer()
 
-      console.log(`Created composite image: ${images.length} covers, ${canvasWidth}x${canvasHeight}, layout: ${actualSmartLayout ? 'smart' : 'grid'}`)
+      console.log(`Created composite image: ${images.length} covers, ${canvasWidth}x${canvasHeight}, layout: ${actualSmartLayout ? 'smart' : `${actualLayout.cols}x${actualLayout.rows}`}`)
       return result
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
