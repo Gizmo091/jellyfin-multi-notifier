@@ -49,6 +49,9 @@ class WhatsAppClient extends EventEmitter {
   private isConnecting = false
   private pendingPhoneNumber: string | null = null // Phone number waiting for pairing
   private pairingCodeRequested = false // Flag to prevent duplicate pairing code requests
+  private slowReconnectIndex = 0 // Index for slow reconnect intervals
+  private readonly slowReconnectIntervals = [5, 10, 20, 30] // Minutes between slow reconnect attempts
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null // Timer for reconnection
 
   constructor() {
     super()
@@ -66,16 +69,46 @@ class WhatsAppClient extends EventEmitter {
   }
 
   /**
+   * Schedules a reconnection attempt after the specified delay.
+   * Cancels any existing scheduled reconnection.
+   */
+  private scheduleReconnect(delayMs: number): void {
+    this.cancelReconnectTimer()
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connect(this.pendingPhoneNumber || undefined, true) // true = auto reconnect
+    }, delayMs)
+  }
+
+  /**
+   * Cancels any pending reconnection timer.
+   */
+  private cancelReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+  }
+
+  /**
    * Connects to WhatsApp. If phoneNumber is provided and not yet registered,
    * generates a pairing code for the admin to enter on their phone.
    *
    * @param phoneNumber - Phone number in international format without + (e.g., "33612345678")
+   * @param isAutoReconnect - Internal flag to indicate this is an automatic reconnection attempt
    * @returns The pairing code if generated, null if already connected/reconnecting
    */
-  async connect(phoneNumber?: string): Promise<string | null> {
+  async connect(phoneNumber?: string, isAutoReconnect = false): Promise<string | null> {
     if (this.isConnecting) {
       console.log('WhatsApp connection already in progress')
       return null
+    }
+
+    // If this is a manual reconnection, reset counters and cancel any pending auto-reconnect
+    if (!isAutoReconnect) {
+      this.cancelReconnectTimer()
+      this.reconnectAttempts = 0
+      this.slowReconnectIndex = 0
     }
 
     this.isConnecting = true
@@ -166,7 +199,7 @@ class WhatsAppClient extends EventEmitter {
           if (statusCode === DisconnectReason.restartRequired) {
             logger.info('WhatsApp', 'Restart required after pairing - reconnecting...')
             this.pairingCodeRequested = false // Reset for fresh connection
-            setTimeout(() => this.connect(this.pendingPhoneNumber || undefined), 1000)
+            setTimeout(() => this.connect(this.pendingPhoneNumber || undefined, true), 1000)
             return
           }
 
@@ -181,20 +214,26 @@ class WhatsAppClient extends EventEmitter {
             this.pairingCodeRequested = false // Reset for fresh pairing
             if (this.pendingPhoneNumber) {
               console.log('Retrying connection with fresh session...')
-              setTimeout(() => this.connect(this.pendingPhoneNumber || undefined), 2000)
+              setTimeout(() => this.connect(this.pendingPhoneNumber || undefined, true), 2000)
             }
           } else {
             // Try to reconnect for all other errors (including connectionClosed)
             if (this.reconnectAttempts < this.maxReconnectAttempts) {
+              // Phase 1: Fast reconnect with exponential backoff (2s, 4s, 8s, 16s, 32s)
               this.reconnectAttempts++
               this.status.isReconnecting = true
               const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000)
-              logger.info('WhatsApp', `Attempting reconnect in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
-              setTimeout(() => this.connect(this.pendingPhoneNumber || undefined), delay)
+              logger.info('WhatsApp', `Attempting fast reconnect in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+              this.scheduleReconnect(delay)
             } else {
-              logger.warn('WhatsApp', 'Max reconnect attempts reached')
-              this.status.error = 'Connection lost. Max reconnect attempts reached.'
-              this.emit('disconnected', { reason, permanent: true })
+              // Phase 2: Slow reconnect with increasing intervals (5, 10, 20, 30 minutes, then loop at 30)
+              this.status.isReconnecting = true
+              const intervalMinutes = this.slowReconnectIntervals[Math.min(this.slowReconnectIndex, this.slowReconnectIntervals.length - 1)]
+              const delay = intervalMinutes * 60 * 1000
+              this.slowReconnectIndex++
+              logger.warn('WhatsApp', `Fast reconnect attempts exhausted. Slow reconnect in ${intervalMinutes} minutes (slow attempt ${this.slowReconnectIndex})`)
+              this.status.error = `Connection lost. Retrying in ${intervalMinutes} minutes...`
+              this.scheduleReconnect(delay)
             }
           }
         }
@@ -209,6 +248,8 @@ class WhatsAppClient extends EventEmitter {
           this.status.disconnectReason = undefined
           this.status.isReconnecting = false
           this.reconnectAttempts = 0
+          this.slowReconnectIndex = 0 // Reset slow reconnect counter on successful connection
+          this.cancelReconnectTimer()
           this.isConnecting = false
           this.pendingPhoneNumber = null // Clear pending phone number after successful connection
           this.pairingCodeRequested = false
@@ -261,12 +302,16 @@ class WhatsAppClient extends EventEmitter {
    * Disconnects from WhatsApp gracefully.
    */
   async disconnect(): Promise<void> {
+    this.cancelReconnectTimer()
     if (this.socket) {
       this.socket.end(undefined)
       this.socket = null
       this.status.connected = false
+      this.status.isReconnecting = false
       this.pendingPhoneNumber = null
       this.pairingCodeRequested = false
+      this.reconnectAttempts = 0
+      this.slowReconnectIndex = 0
       console.log('WhatsApp disconnected')
     }
   }
