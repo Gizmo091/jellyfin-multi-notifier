@@ -878,3 +878,238 @@ So that **I understand it supports more than just WhatsApp**.
 - Updated UI titles (header, login page, browser tab)
 - Updated Docker container name
 - Updated alert messages
+
+---
+
+## Epic 7: Reliability & Observability Improvements (v1.8.0)
+
+Améliorations de fiabilité et d'observabilité ajoutées pour renforcer la résilience du service en production.
+
+### Story 7.1: Graceful Shutdown Handling
+
+As a **system**,
+I want **to handle shutdown signals properly**,
+So that **no data is lost when the service stops**.
+
+**Acceptance Criteria:**
+
+**Given** the service receives SIGTERM or SIGINT
+**When** shutdown begins
+**Then** aggregation windows are flushed before exit
+
+**Given** shutdown is in progress
+**When** WhatsApp is connected
+**Then** the connection is closed gracefully
+
+**Given** database connections are open
+**When** shutdown completes
+**Then** all connections are properly closed
+
+**Implementation:**
+- Signal handlers for SIGTERM/SIGINT in index.ts
+- Call aggregationService.flushAll() on shutdown
+- Call whatsappClient.disconnect() on shutdown
+- Call logger.close() at the end
+
+---
+
+### Story 7.2: Persistent Logs with SQLite
+
+As an **admin**,
+I want **logs to survive server restarts**,
+So that **I can investigate issues that occurred before the last restart**.
+
+**Acceptance Criteria:**
+
+**Given** a log entry is created
+**When** stored
+**Then** it is persisted in the SQLite database
+
+**Given** the server restarts
+**When** I view logs in the admin UI
+**Then** logs from before the restart are still visible
+
+**Given** logs accumulate over time
+**When** cleanup runs (on startup)
+**Then** logs older than 7 days are removed
+
+**Given** the log table grows
+**When** it exceeds 5000 entries
+**Then** oldest entries are pruned to prevent unbounded growth
+
+**Implementation:**
+- New `logs` table in queue.db
+- Logger service rewritten to use SQLite
+- Cleanup on startup (7-day retention)
+- Max 5000 entries limit
+
+---
+
+### Story 7.3: Dead-Letter Queue for Failed Messages
+
+As an **admin**,
+I want **permanently failed messages to be preserved for analysis**,
+So that **I can understand why certain messages couldn't be delivered**.
+
+**Acceptance Criteria:**
+
+**Given** a message exceeds the max retry count (5)
+**When** the final retry fails
+**Then** the message is moved to the dead-letter queue
+
+**Given** a message is in the dead-letter queue
+**When** I view it
+**Then** I see: original content, failure reason, retry count, timestamps
+
+**Given** the dead-letter queue accumulates
+**When** I want to clear it
+**Then** an API endpoint allows clearing all dead-letter messages
+
+**Implementation:**
+- New `dead_letter_queue` table
+- queueService.moveToDeadLetter(id, reason) method
+- Retry service calls moveToDeadLetter instead of marking as failed
+- API endpoints for listing and clearing dead-letter messages
+
+---
+
+### Story 7.4: Configuration Validation at Startup
+
+As an **admin**,
+I want **invalid configuration to be detected at startup**,
+So that **I know immediately if something is misconfigured**.
+
+**Acceptance Criteria:**
+
+**Given** JELLYFIN_URL is set
+**When** it's not a valid URL
+**Then** the server exits with an error message
+
+**Given** PORT is set
+**When** it's outside the valid range (1-65535)
+**Then** the server exits with an error message
+
+**Given** ADMIN_PASSWORD is set to "changeme" in production
+**When** the server starts
+**Then** a warning is displayed
+
+**Given** WEBHOOK_SECRET is not set or too short
+**When** the server starts
+**Then** a warning is displayed
+
+**Implementation:**
+- validateConfig() function in index.ts
+- URL validation with new URL() constructor
+- Port range check
+- Warnings for weak security settings
+
+---
+
+### Story 7.5: Centralized Data Directory
+
+As a **developer**,
+I want **all services to use the same data directory configuration**,
+So that **path management is consistent across the codebase**.
+
+**Acceptance Criteria:**
+
+**Given** any service needs the data directory
+**When** it references the path
+**Then** it uses DATA_DIR from config.ts
+
+**Given** the environment is production
+**When** DATA_DIR is resolved
+**Then** it points to /app/data
+
+**Given** the environment is development
+**When** DATA_DIR is resolved
+**Then** it points to ./data relative to cwd
+
+**Implementation:**
+- DATA_DIR and DB_PATH exports in config.ts
+- ensureDataDirectory() helper function
+- All services updated to import from config.ts
+- Removed duplicate path logic from individual services
+
+---
+
+### Story 7.6: Image Download Concurrency Limit
+
+As a **system**,
+I want **to limit concurrent image downloads**,
+So that **large notifications don't saturate memory or network**.
+
+**Acceptance Criteria:**
+
+**Given** a composite image needs to be created with many covers
+**When** fetching images
+**Then** at most 5 downloads run in parallel
+
+**Given** some image fetches fail
+**When** others are still pending
+**Then** the parallel processing continues without blocking
+
+**Implementation:**
+- promiseAllWithLimit() helper function in cover service
+- MAX_CONCURRENT_FETCHES = 5 constant
+- Used in createCompositeImage() instead of Promise.allSettled()
+
+---
+
+### Story 7.7: Automatic Redirect Cleanup
+
+As a **system**,
+I want **old redirect links to be automatically cleaned up**,
+So that **the database doesn't grow indefinitely**.
+
+**Acceptance Criteria:**
+
+**Given** the server starts
+**When** initialization completes
+**Then** redirect links older than 30 days are deleted
+
+**Given** the server is running
+**When** 6 hours have passed
+**Then** cleanup runs again automatically
+
+**Given** cleanup runs
+**When** old entries are deleted
+**Then** the count is logged
+
+**Implementation:**
+- startCleanupScheduler() in redirect service
+- 6-hour interval with setInterval()
+- Timer.unref() to not prevent process exit
+- 30-day retention (MAX_AGE_HOURS = 24 * 30)
+
+---
+
+### Story 7.8: Slow Reconnect for WhatsApp
+
+As a **system**,
+I want **to keep trying to reconnect WhatsApp even after fast retries are exhausted**,
+So that **temporary outages don't require manual intervention**.
+
+**Acceptance Criteria:**
+
+**Given** WhatsApp disconnects
+**When** fast reconnect attempts (5x with exponential backoff) fail
+**Then** slow reconnect begins
+
+**Given** slow reconnect is active
+**When** retrying
+**Then** attempts are made at 5, 10, 20, then 30 minute intervals
+
+**Given** slow reconnect reaches 30 minutes
+**When** subsequent retries are needed
+**Then** it continues at 30-minute intervals indefinitely
+
+**Given** reconnection succeeds
+**When** connected
+**Then** all reconnect counters are reset
+
+**Implementation:**
+- slowReconnectIndex counter in WhatsApp client
+- slowReconnectIntervals = [5, 10, 20, 30] minutes
+- scheduleReconnect() helper with timer management
+- Counters reset on successful connection or manual reconnect
