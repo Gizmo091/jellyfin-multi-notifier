@@ -6,16 +6,26 @@ Autonomous service that monitors a Jellyfin media server and automatically notif
 
 ## Features
 
+### Notifications
 - Receive and process Jellyfin webhook events (additions/deletions)
 - **Multi-platform notifications**: WhatsApp, Discord, and Telegram
-- Auto-connect WhatsApp on startup (QR code displayed in terminal and sent via alerts)
 - Intelligent notification aggregation (films and series separately)
-- Cover images from TMDB/IMDB with Jellyfin fallback (with composite patchwork for multiple items)
+- Cover images from TMDB with Jellyfin fallback (with composite patchwork for multiple items)
 - Direct links to content via redirect service
-- Persistent message queue with automatic retry
+- Multi-language support (English, French, Spanish, German, Italian, Portuguese)
+
+### Reliability
+- **Persistent message queue** with automatic retry (exponential backoff)
+- **Dead-letter queue** for permanently failed messages (after 5 retries)
+- **Graceful shutdown** - flushes pending notifications on SIGTERM/SIGINT
+- **Auto-reconnect WhatsApp** with slow retry (5, 10, 20, 30 min intervals)
+- **Persistent logs** survive restarts (SQLite, 7-day retention)
+
+### Administration
+- Auto-connect WhatsApp on startup (QR code displayed in terminal and sent via alerts)
 - Multi-channel admin alerts (Email, Telegram, Discord for connection status)
 - Admin web UI for configuration
-- Multi-language support (English, French, Spanish, German, Italian, Portuguese)
+- Config validation at startup (URL validation, port range, warnings for weak secrets)
 
 ## Quick Start
 
@@ -170,7 +180,13 @@ jellyfin-multi-notifier/
 ### Data Persistence
 
 The `data/` directory contains:
-- `queue.db` - SQLite database (message queue, settings, notification channels)
+- `queue.db` - SQLite database containing:
+  - Message queue (pending, sent, failed messages)
+  - Dead-letter queue (permanently failed messages for analysis)
+  - Notification channel settings
+  - Application logs (7-day retention)
+  - Redirect links (30-day retention, auto-cleanup)
+  - Aggregation state
 - `whatsapp-session/` - WhatsApp authentication session
 
 **Important**: In Docker, this is mounted as a volume (`/app/data`). Back up this directory to preserve your configuration and WhatsApp session.
