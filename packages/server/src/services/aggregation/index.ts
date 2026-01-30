@@ -1,15 +1,9 @@
 import { EventEmitter } from 'events'
 import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'fs'
 import { MediaEvent } from '../../types/index.js'
-import { config } from '../../config.js'
+import { config, DB_PATH, ensureDataDirectory } from '../../config.js'
 import { redirectService } from '../redirect/index.js'
 import { logger } from '../logger/index.js'
-
-// Database path - same location as other services
-const DATA_DIR = process.env.NODE_ENV === 'production' ? '/app/data' : './data'
-const DB_PATH = path.join(DATA_DIR, 'queue.db')
 
 // Minimum extension time when adding items near window end (5 minutes)
 const MIN_EXTENSION_MS = 5 * 60 * 1000
@@ -57,16 +51,10 @@ class AggregationService extends EventEmitter {
 
   constructor() {
     super()
-    this.ensureDataDirectory()
+    ensureDataDirectory()
     this.db = new Database(DB_PATH)
     this.initializeDatabase()
     this.restoreFromDatabase()
-  }
-
-  private ensureDataDirectory(): void {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true })
-    }
   }
 
   private initializeDatabase(): void {

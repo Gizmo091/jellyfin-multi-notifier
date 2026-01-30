@@ -6,9 +6,62 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { config } from './config.js'
+import { logger } from './services/logger/index.js'
+import { aggregationService } from './services/aggregation/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// Validate critical configuration at startup
+function validateConfig(): void {
+  const errors: string[] = []
+
+  // Validate JELLYFIN_URL
+  if (config.jellyfinUrl) {
+    try {
+      new URL(config.jellyfinUrl)
+    } catch {
+      errors.push(`JELLYFIN_URL is not a valid URL: ${config.jellyfinUrl}`)
+    }
+  }
+
+  // Validate PUBLIC_URL
+  if (config.publicUrl) {
+    try {
+      new URL(config.publicUrl)
+    } catch {
+      errors.push(`PUBLIC_URL is not a valid URL: ${config.publicUrl}`)
+    }
+  }
+
+  // Validate PORT
+  if (config.port < 1 || config.port > 65535) {
+    errors.push(`PORT must be between 1 and 65535, got: ${config.port}`)
+  }
+
+  // Warn about default admin password in production
+  if (config.nodeEnv === 'production' && config.adminPassword === 'changeme') {
+    console.warn('⚠️  WARNING: Using default admin password in production. Please set ADMIN_PASSWORD.')
+  }
+
+  // Warn about missing webhook secret
+  if (!config.webhookSecret) {
+    console.warn('⚠️  WARNING: WEBHOOK_SECRET is not set. Webhook endpoints will reject all requests.')
+  } else if (config.webhookSecret.length < 16) {
+    console.warn('⚠️  WARNING: WEBHOOK_SECRET is too short (< 16 characters). Consider using a longer secret.')
+  }
+
+  if (errors.length > 0) {
+    console.error('❌ Configuration errors:')
+    for (const error of errors) {
+      console.error(`   - ${error}`)
+    }
+    process.exit(1)
+  }
+}
+
+validateConfig()
+
 import { webhookRoutes } from './routes/webhook.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
 import { aggregationRoutes } from './routes/aggregation.js'
@@ -126,11 +179,38 @@ if (config.whatsappLoginOnStartup) {
   console.log('WhatsApp auto-connect disabled (WHATSAPP_LOGIN_ON_STARTUP=false)')
 }
 
+// Graceful shutdown handler
+async function gracefulShutdown(signal: string): Promise<void> {
+  logger.info('Server', `Received ${signal}, starting graceful shutdown...`)
+
+  // Flush all aggregation windows to prevent data loss
+  logger.info('Server', 'Flushing aggregation windows...')
+  aggregationService.flushAll()
+
+  // Disconnect WhatsApp gracefully
+  logger.info('Server', 'Disconnecting WhatsApp...')
+  await whatsappClient.disconnect()
+
+  // Close Fastify server
+  logger.info('Server', 'Closing HTTP server...')
+  await fastify.close()
+
+  // Close logger database connection
+  logger.info('Server', 'Shutdown complete')
+  logger.close()
+
+  process.exit(0)
+}
+
+// Register signal handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+
 // Start server
 const start = async () => {
   try {
     await fastify.listen({ port: config.port, host: '0.0.0.0' })
-    fastify.log.info(`Server listening on port ${config.port}`)
+    logger.info('Server', `Server listening on port ${config.port}`)
   } catch (err) {
     fastify.log.error(err)
     process.exit(1)

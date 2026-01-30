@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import { queueService, QueueMessage } from '../queue/index.js'
 import { whatsappClient } from '../whatsapp/client.js'
 import { settingsService } from '../settings/index.js'
+import { logger } from '../logger/index.js'
 
 /**
  * Retry service for managing automatic message retry with exponential backoff.
@@ -19,18 +20,18 @@ class RetryService extends EventEmitter {
    */
   initialize(): void {
     if (this.initialized) {
-      console.log('RetryService already initialized')
+      logger.debug('Retry', 'RetryService already initialized')
       return
     }
 
     // When WhatsApp connects, process pending messages
     whatsappClient.on('connected', () => {
-      console.log('WhatsApp connected - processing pending queue')
+      logger.info('Retry', 'WhatsApp connected - processing pending queue')
       this.processAllPending()
     })
 
     this.initialized = true
-    console.log('RetryService initialized')
+    logger.info('Retry', 'RetryService initialized')
   }
 
   /**
@@ -48,7 +49,7 @@ class RetryService extends EventEmitter {
   scheduleRetry(messageId: number): void {
     const message = queueService.getMessage(messageId)
     if (!message) {
-      console.warn(`Cannot schedule retry: message ${messageId} not found`)
+      logger.warn('Retry', `Cannot schedule retry: message ${messageId} not found`)
       return
     }
 
@@ -59,14 +60,14 @@ class RetryService extends EventEmitter {
     const newRetryCount = queueService.incrementRetryCount(messageId)
 
     if (newRetryCount > this.MAX_RETRIES) {
-      console.log(`Message ${messageId} exceeded max retries (${this.MAX_RETRIES}), marking as failed`)
-      queueService.updateStatus(messageId, 'failed')
+      logger.warn('Retry', `Message ${messageId} exceeded max retries (${this.MAX_RETRIES}), moving to dead-letter queue`)
+      queueService.moveToDeadLetter(messageId, `Exceeded max retries (${this.MAX_RETRIES})`)
       this.emit('message-failed', { messageId, retryCount: newRetryCount })
       return
     }
 
     const delay = this.calculateDelay(newRetryCount)
-    console.log(`Scheduling retry ${newRetryCount}/${this.MAX_RETRIES} for message ${messageId} in ${delay / 1000}s`)
+    logger.info('Retry', `Scheduling retry ${newRetryCount}/${this.MAX_RETRIES} for message ${messageId} in ${delay / 1000}s`)
 
     const timer = setTimeout(() => {
       this.pendingRetries.delete(messageId)
@@ -82,17 +83,17 @@ class RetryService extends EventEmitter {
   private async executeRetry(messageId: number): Promise<void> {
     const message = queueService.getMessage(messageId)
     if (!message) {
-      console.warn(`Cannot execute retry: message ${messageId} not found`)
+      logger.warn('Retry', `Cannot execute retry: message ${messageId} not found`)
       return
     }
 
     if (message.status !== 'pending') {
-      console.log(`Message ${messageId} no longer pending (status: ${message.status}), skipping retry`)
+      logger.debug('Retry', `Message ${messageId} no longer pending (status: ${message.status}), skipping retry`)
       return
     }
 
     if (!whatsappClient.isConnected()) {
-      console.log(`WhatsApp disconnected, rescheduling retry for message ${messageId}`)
+      logger.debug('Retry', `WhatsApp disconnected, rescheduling retry for message ${messageId}`)
       // Don't increment retry count, just reschedule
       const delay = this.calculateDelay(message.retryCount)
       const timer = setTimeout(() => {
@@ -103,11 +104,11 @@ class RetryService extends EventEmitter {
       return
     }
 
-    console.log(`Executing retry for message ${messageId} (attempt ${message.retryCount})`)
+    logger.info('Retry', `Executing retry for message ${messageId} (attempt ${message.retryCount})`)
 
     const groupId = settingsService.getWhatsAppGroupId()
     if (!groupId) {
-      console.warn('WhatsApp group ID not configured, cannot retry')
+      logger.warn('Retry', 'WhatsApp group ID not configured, cannot retry')
       return
     }
 
@@ -123,12 +124,12 @@ class RetryService extends EventEmitter {
     }
 
     if (success) {
-      console.log(`Retry successful for message ${messageId}`)
+      logger.info('Retry', `Retry successful for message ${messageId}`)
       queueService.updateStatus(messageId, 'sent')
       queueService.removeMessage(messageId)
       this.emit('retry-success', { messageId })
     } else {
-      console.log(`Retry failed for message ${messageId}`)
+      logger.warn('Retry', `Retry failed for message ${messageId}`)
       this.scheduleRetry(messageId)
     }
   }
@@ -141,7 +142,7 @@ class RetryService extends EventEmitter {
     if (timer) {
       clearTimeout(timer)
       this.pendingRetries.delete(messageId)
-      console.log(`Cancelled pending retry for message ${messageId}`)
+      logger.debug('Retry', `Cancelled pending retry for message ${messageId}`)
     }
   }
 
@@ -151,10 +152,10 @@ class RetryService extends EventEmitter {
   cancelAllRetries(): void {
     for (const [messageId, timer] of this.pendingRetries) {
       clearTimeout(timer)
-      console.log(`Cancelled retry for message ${messageId}`)
+      logger.debug('Retry', `Cancelled retry for message ${messageId}`)
     }
     this.pendingRetries.clear()
-    console.log('All pending retries cancelled')
+    logger.info('Retry', 'All pending retries cancelled')
   }
 
   /**
@@ -164,11 +165,11 @@ class RetryService extends EventEmitter {
     const pendingMessages = queueService.getPendingMessages()
 
     if (pendingMessages.length === 0) {
-      console.log('No pending messages to process')
+      logger.debug('Retry', 'No pending messages to process')
       return
     }
 
-    console.log(`Processing ${pendingMessages.length} pending messages`)
+    logger.info('Retry', `Processing ${pendingMessages.length} pending messages`)
 
     // Process messages with a small delay between each to avoid rate limiting
     for (const message of pendingMessages) {
@@ -189,15 +190,15 @@ class RetryService extends EventEmitter {
    */
   private async processMessage(message: QueueMessage): Promise<void> {
     if (!whatsappClient.isConnected()) {
-      console.log(`WhatsApp disconnected, cannot process message ${message.id}`)
+      logger.debug('Retry', `WhatsApp disconnected, cannot process message ${message.id}`)
       return
     }
 
-    console.log(`Processing queued message ${message.id} (retry count: ${message.retryCount})`)
+    logger.debug('Retry', `Processing queued message ${message.id} (retry count: ${message.retryCount})`)
 
     const groupId = settingsService.getWhatsAppGroupId()
     if (!groupId) {
-      console.warn('WhatsApp group ID not configured, cannot process message')
+      logger.warn('Retry', 'WhatsApp group ID not configured, cannot process message')
       return
     }
 
@@ -213,11 +214,11 @@ class RetryService extends EventEmitter {
     }
 
     if (success) {
-      console.log(`Message ${message.id} sent successfully`)
+      logger.info('Retry', `Message ${message.id} sent successfully`)
       queueService.updateStatus(message.id, 'sent')
       queueService.removeMessage(message.id)
     } else {
-      console.log(`Message ${message.id} failed, scheduling retry`)
+      logger.warn('Retry', `Message ${message.id} failed, scheduling retry`)
       this.scheduleRetry(message.id)
     }
   }

@@ -1,10 +1,7 @@
 import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'fs'
 import type { NotificationChannel, ChannelType, SupportedLanguage, NotificationChannelConfig } from '../../types/index.js'
-
-const DATA_DIR = path.join(process.cwd(), 'data')
-const DB_PATH = path.join(DATA_DIR, 'queue.db')
+import { DB_PATH, ensureDataDirectory } from '../../config.js'
+import { logger } from '../logger/index.js'
 
 // Re-export for backwards compatibility
 export type { SupportedLanguage } from '../../types/index.js'
@@ -25,19 +22,9 @@ class SettingsService {
   private db: Database.Database
 
   constructor() {
-    this.ensureDataDirectory()
+    ensureDataDirectory()
     this.db = new Database(DB_PATH)
     this.initialize()
-  }
-
-  /**
-   * Ensures the data directory exists.
-   */
-  private ensureDataDirectory(): void {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true })
-      console.log(`Created data directory: ${DATA_DIR}`)
-    }
   }
 
   /**
@@ -80,7 +67,7 @@ class SettingsService {
     // Migrate from whatsapp_groups to notification_channels if needed
     this.migrateWhatsAppGroups()
 
-    console.log('SettingsService initialized with SQLite database')
+    logger.info('Settings', 'SettingsService initialized with SQLite database')
   }
 
   /**
@@ -115,7 +102,7 @@ class SettingsService {
     }
 
     if (migratedCount > 0) {
-      console.log(`Migrated ${migratedCount} WhatsApp groups to notification_channels`)
+      logger.info('Settings', `Migrated ${migratedCount} WhatsApp groups to notification_channels`)
     }
   }
 
@@ -142,7 +129,7 @@ class SettingsService {
         updated_at = CURRENT_TIMESTAMP
     `).run(key, value)
 
-    console.log(`Setting '${key}' updated`)
+    logger.debug('Settings', `Setting '${key}' updated`)
   }
 
   /**
@@ -150,7 +137,7 @@ class SettingsService {
    */
   delete(key: string): void {
     this.db.prepare('DELETE FROM app_settings WHERE key = ?').run(key)
-    console.log(`Setting '${key}' deleted`)
+    logger.debug('Settings', `Setting '${key}' deleted`)
   }
 
   /**
@@ -201,7 +188,7 @@ class SettingsService {
       VALUES (?, ?, ?, ?)
     `).run(id, groupId, groupName, language)
 
-    console.log(`WhatsApp group added: ${groupName} (${language})`)
+    logger.info('Settings', `WhatsApp group added: ${groupName} (${language})`)
 
     return { id, groupId, groupName, language }
   }
@@ -231,7 +218,7 @@ class SettingsService {
       this.db.prepare(`
         UPDATE whatsapp_groups SET ${setClauses.join(', ')} WHERE id = ?
       `).run(...values)
-      console.log(`WhatsApp group ${id} updated`)
+      logger.debug('Settings', `WhatsApp group ${id} updated`)
     }
   }
 
@@ -240,7 +227,7 @@ class SettingsService {
    */
   removeWhatsAppGroup(id: string): void {
     this.db.prepare('DELETE FROM whatsapp_groups WHERE id = ?').run(id)
-    console.log(`WhatsApp group ${id} removed`)
+    logger.info('Settings', `WhatsApp group ${id} removed`)
   }
 
   // =============================================
@@ -333,7 +320,7 @@ class SettingsService {
       `).run(id, target, displayName, language)
     }
 
-    console.log(`Notification channel added: ${displayName} (${channelType}, ${language})`)
+    logger.info('Settings', `Notification channel added: ${displayName} (${channelType}, ${language})`)
 
     return {
       id,
@@ -384,7 +371,7 @@ class SettingsService {
       this.db.prepare(`
         UPDATE notification_channels SET ${setClauses.join(', ')} WHERE id = ?
       `).run(...values)
-      console.log(`Notification channel ${id} updated`)
+      logger.debug('Settings', `Notification channel ${id} updated`)
 
       // Keep whatsapp_groups in sync for backwards compatibility
       const channel = this.getNotificationChannel(id)
@@ -403,7 +390,7 @@ class SettingsService {
     this.db.prepare(
       'UPDATE notification_channels SET enabled = ? WHERE id = ?'
     ).run(enabled ? 1 : 0, id)
-    console.log(`Notification channel ${id} ${enabled ? 'enabled' : 'disabled'}`)
+    logger.debug('Settings', `Notification channel ${id} ${enabled ? 'enabled' : 'disabled'}`)
   }
 
   /**
@@ -420,7 +407,7 @@ class SettingsService {
       this.db.prepare('DELETE FROM whatsapp_groups WHERE id = ?').run(id)
     }
 
-    console.log(`Notification channel ${id} removed`)
+    logger.info('Settings', `Notification channel ${id} removed`)
   }
 
   /**
@@ -443,7 +430,7 @@ class SettingsService {
    */
   close(): void {
     this.db.close()
-    console.log('SettingsService database connection closed')
+    logger.info('Settings', 'SettingsService database connection closed')
   }
 
   // =============================================
@@ -466,7 +453,7 @@ class SettingsService {
 
       // Cache expires after 7 days
       if (daysDiff > 7) {
-        console.log('WhatsApp groups cache expired')
+        logger.debug('Settings', 'WhatsApp groups cache expired')
         return null
       }
 
@@ -485,7 +472,7 @@ class SettingsService {
       cachedAt: new Date().toISOString(),
     }
     this.set('whatsapp_groups_cache', JSON.stringify(data))
-    console.log('WhatsApp groups cached')
+    logger.debug('Settings', 'WhatsApp groups cached')
   }
 
   /**
@@ -493,7 +480,7 @@ class SettingsService {
    */
   clearWhatsAppGroupsCache(): void {
     this.delete('whatsapp_groups_cache')
-    console.log('WhatsApp groups cache cleared')
+    logger.debug('Settings', 'WhatsApp groups cache cleared')
   }
 }
 

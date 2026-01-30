@@ -1,11 +1,12 @@
 import { nanoid } from 'nanoid'
 import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'fs'
-import { config } from '../../config.js'
+import { config, DB_PATH, ensureDataDirectory } from '../../config.js'
+import { logger } from '../logger/index.js'
 
-const DATA_DIR = path.join(process.cwd(), 'data')
-const DB_PATH = path.join(DATA_DIR, 'queue.db')
+// Cleanup interval: every 6 hours
+const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000
+// Max age for redirects: 30 days
+const MAX_AGE_HOURS = 24 * 30
 
 export interface RedirectEntry {
   shortId: string
@@ -20,21 +21,13 @@ export interface RedirectEntry {
  */
 class RedirectService {
   private db: Database.Database
+  private cleanupTimer: NodeJS.Timeout | null = null
 
   constructor() {
-    this.ensureDataDirectory()
+    ensureDataDirectory()
     this.db = new Database(DB_PATH)
     this.initialize()
-  }
-
-  /**
-   * Ensures the data directory exists.
-   */
-  private ensureDataDirectory(): void {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true })
-      console.log(`Created data directory: ${DATA_DIR}`)
-    }
+    this.startCleanupScheduler()
   }
 
   /**
@@ -55,7 +48,34 @@ class RedirectService {
       CREATE INDEX IF NOT EXISTS idx_redirects_created_at ON redirects(created_at)
     `)
 
-    console.log('RedirectService initialized with SQLite persistence')
+    logger.info('Redirect', 'RedirectService initialized with SQLite persistence')
+  }
+
+  /**
+   * Start the automatic cleanup scheduler.
+   * Runs cleanup every 6 hours and on startup.
+   */
+  private startCleanupScheduler(): void {
+    // Run cleanup on startup
+    this.clearOldEntries(MAX_AGE_HOURS)
+
+    // Schedule periodic cleanup
+    this.cleanupTimer = setInterval(() => {
+      this.clearOldEntries(MAX_AGE_HOURS)
+    }, CLEANUP_INTERVAL_MS)
+
+    // Don't prevent process from exiting
+    this.cleanupTimer.unref()
+  }
+
+  /**
+   * Stop the cleanup scheduler (for graceful shutdown).
+   */
+  stopCleanupScheduler(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer)
+      this.cleanupTimer = null
+    }
   }
 
   /**
@@ -71,7 +91,7 @@ class RedirectService {
     `)
     stmt.run(shortId, jellyfinId, title)
 
-    console.log(`Created redirect /${shortId} for "${title}" (${jellyfinId})`)
+    logger.debug('Redirect', `Created redirect /${shortId} for "${title}"`, { jellyfinId })
     return `/r/${shortId}`
   }
 
@@ -169,7 +189,7 @@ class RedirectService {
     const result = stmt.run(cutoffStr)
 
     if (result.changes > 0) {
-      console.log(`Cleared ${result.changes} old redirect entries`)
+      logger.info('Redirect', `Cleared ${result.changes} old redirect entries`)
     }
 
     return result.changes

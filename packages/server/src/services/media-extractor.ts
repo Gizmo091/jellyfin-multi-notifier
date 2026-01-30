@@ -109,7 +109,7 @@ export function extractMediaEvent(payload: JellyfinWebhookPayload): MediaEvent |
 
   // Item is required for extraction
   if (!Item) {
-    console.warn(`Webhook ${NotificationType} received without Item data`)
+    logger.warn('Webhook', `${NotificationType} received without Item data`)
     return null
   }
 
@@ -130,10 +130,10 @@ export function extractMediaEvent(payload: JellyfinWebhookPayload): MediaEvent |
 
   // Log warning for missing fields
   if (!Item.Id) {
-    console.warn('Jellyfin item missing Id field')
+    logger.warn('Webhook', 'Jellyfin item missing Id field')
   }
   if (!Item.Name) {
-    console.warn('Jellyfin item missing Name field')
+    logger.warn('Webhook', 'Jellyfin item missing Name field')
   }
 
   // Extract episode-specific metadata for grouping

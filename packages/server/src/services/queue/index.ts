@@ -1,10 +1,7 @@
 import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'fs'
 import type { MediaType, ChannelType } from '../../types/index.js'
-
-const DATA_DIR = path.join(process.cwd(), 'data')
-const DB_PATH = path.join(DATA_DIR, 'queue.db')
+import { DB_PATH, ensureDataDirectory } from '../../config.js'
+import { logger } from '../logger/index.js'
 
 export type QueueMessageStatus = 'pending' | 'sent' | 'failed'
 
@@ -21,6 +18,20 @@ export interface QueueMessage {
   updatedAt: string
 }
 
+export interface DeadLetterMessage {
+  id: number
+  originalId: number
+  content: string
+  mediaType: MediaType
+  imageUrl: string | null
+  channelId: string | null
+  channelType: ChannelType | null
+  retryCount: number
+  failureReason: string
+  originalCreatedAt: string
+  failedAt: string
+}
+
 interface DbRow {
   id: number
   content: string
@@ -34,6 +45,20 @@ interface DbRow {
   updated_at: string
 }
 
+interface DbDeadLetterRow {
+  id: number
+  original_id: number
+  content: string
+  media_type: string
+  image_url: string | null
+  channel_id: string | null
+  channel_type: string | null
+  retry_count: number
+  failure_reason: string
+  original_created_at: string
+  failed_at: string
+}
+
 /**
  * Queue service for persisting messages in SQLite.
  * Ensures no message loss during restarts (NFR15).
@@ -42,19 +67,9 @@ class QueueService {
   private db: Database.Database
 
   constructor() {
-    this.ensureDataDirectory()
+    ensureDataDirectory()
     this.db = new Database(DB_PATH)
     this.initialize()
-  }
-
-  /**
-   * Ensures the data directory exists.
-   */
-  private ensureDataDirectory(): void {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true })
-      console.log(`Created data directory: ${DATA_DIR}`)
-    }
   }
 
   /**
@@ -80,10 +95,31 @@ class QueueService {
       CREATE INDEX IF NOT EXISTS idx_queue_status ON message_queue(status)
     `)
 
+    // Dead-letter queue for permanently failed messages
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS dead_letter_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        original_id INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        image_url TEXT,
+        channel_id TEXT,
+        channel_type TEXT,
+        retry_count INTEGER NOT NULL,
+        failure_reason TEXT NOT NULL,
+        original_created_at TEXT NOT NULL,
+        failed_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_dlq_failed_at ON dead_letter_queue(failed_at)
+    `)
+
     // Add channel columns if they don't exist (migration for existing databases)
     this.migrateAddChannelColumns()
 
-    console.log('QueueService initialized with SQLite database')
+    logger.info('Queue', 'QueueService initialized with SQLite database')
   }
 
   /**
@@ -97,7 +133,7 @@ class QueueService {
     if (!hasChannelId) {
       this.db.exec('ALTER TABLE message_queue ADD COLUMN channel_id TEXT')
       this.db.exec('ALTER TABLE message_queue ADD COLUMN channel_type TEXT')
-      console.log('QueueService: Added channel_id and channel_type columns')
+      logger.info('Queue', 'Added channel_id and channel_type columns')
     }
   }
 
@@ -110,7 +146,7 @@ class QueueService {
     )
     const result = stmt.run(content, mediaType, imageUrl || null, channelId || null, channelType || null)
     const id = result.lastInsertRowid as number
-    console.log(`Message queued with ID ${id} (type: ${mediaType}, channel: ${channelId || 'all'})`)
+    logger.debug('Queue', `Message queued with ID ${id}`, { mediaType, channelId: channelId || 'all' })
     return id
   }
 
@@ -154,7 +190,7 @@ class QueueService {
     this.db.prepare(
       'UPDATE message_queue SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
     ).run(status, id)
-    console.log(`Message ${id} status updated to: ${status}`)
+    logger.debug('Queue', `Message ${id} status updated to: ${status}`)
   }
 
   /**
@@ -174,7 +210,7 @@ class QueueService {
    */
   removeMessage(id: number): void {
     this.db.prepare('DELETE FROM message_queue WHERE id = ?').run(id)
-    console.log(`Message ${id} removed from queue`)
+    logger.debug('Queue', `Message ${id} removed from queue`)
   }
 
   /**
@@ -211,7 +247,7 @@ class QueueService {
     const result = this.db.prepare('DELETE FROM message_queue WHERE status = ?').run('sent')
     const count = result.changes
     if (count > 0) {
-      console.log(`Cleared ${count} sent messages from queue`)
+      logger.info('Queue', `Cleared ${count} sent messages from queue`)
     }
     return count
   }
@@ -250,7 +286,89 @@ class QueueService {
    */
   close(): void {
     this.db.close()
-    console.log('QueueService database connection closed')
+    logger.info('Queue', 'QueueService database connection closed')
+  }
+
+  /**
+   * Move a permanently failed message to the dead-letter queue.
+   * Removes it from the main queue.
+   */
+  moveToDeadLetter(id: number, failureReason: string): void {
+    const message = this.getMessage(id)
+    if (!message) {
+      logger.warn('Queue', `Cannot move message ${id} to dead-letter: not found`)
+      return
+    }
+
+    const stmt = this.db.prepare(`
+      INSERT INTO dead_letter_queue (
+        original_id, content, media_type, image_url, channel_id, channel_type,
+        retry_count, failure_reason, original_created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    stmt.run(
+      message.id,
+      message.content,
+      message.mediaType,
+      message.imageUrl,
+      message.channelId,
+      message.channelType,
+      message.retryCount,
+      failureReason,
+      message.createdAt
+    )
+
+    this.removeMessage(id)
+    logger.warn('Queue', `Message ${id} moved to dead-letter queue`, { reason: failureReason })
+  }
+
+  /**
+   * Get all dead-letter messages.
+   */
+  getDeadLetterMessages(): DeadLetterMessage[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM dead_letter_queue ORDER BY failed_at DESC'
+    ).all() as DbDeadLetterRow[]
+
+    return rows.map(this.mapDeadLetterRowToMessage)
+  }
+
+  /**
+   * Get dead-letter message count.
+   */
+  getDeadLetterCount(): number {
+    const row = this.db.prepare('SELECT COUNT(*) as count FROM dead_letter_queue').get() as { count: number }
+    return row.count
+  }
+
+  /**
+   * Clear all dead-letter messages.
+   */
+  clearDeadLetterMessages(): number {
+    const result = this.db.prepare('DELETE FROM dead_letter_queue').run()
+    if (result.changes > 0) {
+      logger.info('Queue', `Cleared ${result.changes} dead-letter messages`)
+    }
+    return result.changes
+  }
+
+  /**
+   * Map dead-letter database row to DeadLetterMessage.
+   */
+  private mapDeadLetterRowToMessage(row: DbDeadLetterRow): DeadLetterMessage {
+    return {
+      id: row.id,
+      originalId: row.original_id,
+      content: row.content,
+      mediaType: row.media_type as MediaType,
+      imageUrl: row.image_url,
+      channelId: row.channel_id,
+      channelType: row.channel_type as ChannelType | null,
+      retryCount: row.retry_count,
+      failureReason: row.failure_reason,
+      originalCreatedAt: row.original_created_at,
+      failedAt: row.failed_at,
+    }
   }
 }
 

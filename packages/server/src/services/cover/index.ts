@@ -1,9 +1,45 @@
 import sharp from 'sharp'
 import { config } from '../../config.js'
 import { MediaEvent, SupportedLanguage } from '../../types/index.js'
+import { logger } from '../logger/index.js'
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500'
+
+// Maximum concurrent image fetches to avoid network/memory saturation
+const MAX_CONCURRENT_FETCHES = 5
+
+/**
+ * Execute promises with a concurrency limit.
+ * Returns results in the same order as input.
+ */
+async function promiseAllWithLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length)
+  let currentIndex = 0
+
+  async function runNext(): Promise<void> {
+    while (currentIndex < tasks.length) {
+      const index = currentIndex++
+      try {
+        const value = await tasks[index]()
+        results[index] = { status: 'fulfilled', value }
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason }
+      }
+    }
+  }
+
+  // Start up to 'limit' concurrent workers
+  const workers = Array(Math.min(limit, tasks.length))
+    .fill(null)
+    .map(() => runNext())
+
+  await Promise.all(workers)
+  return results
+}
 
 // Map our supported languages to TMDB language codes
 const TMDB_LANGUAGE_MAP: Record<SupportedLanguage, string> = {
@@ -44,18 +80,18 @@ class CoverService {
     if (this.apiKey) {
       const tmdbCover = await this.fetchFromTMDB(event, language)
       if (tmdbCover) {
-        console.log(`TMDB cover found for "${event.title}" (lang: ${language || 'default'}): ${tmdbCover}`)
+        logger.debug('Cover', `TMDB cover found for "${event.title}"`, { language: language || 'default' })
         return tmdbCover
       }
     }
 
     // Fallback to Jellyfin cover
     if (event.coverUrl) {
-      console.log(`Using Jellyfin cover for "${event.title}": ${event.coverUrl}`)
+      logger.debug('Cover', `Using Jellyfin cover for "${event.title}"`)
       return event.coverUrl
     }
 
-    console.log(`No cover found for "${event.title}"`)
+    logger.debug('Cover', `No cover found for "${event.title}"`)
     return null
   }
 
@@ -97,7 +133,7 @@ class CoverService {
       const response = await fetch(url)
 
       if (!response.ok) {
-        console.warn(`TMDB API error: ${response.status} ${response.statusText}`)
+        logger.warn('Cover', `TMDB API error: ${response.status} ${response.statusText}`)
         return null
       }
 
@@ -107,11 +143,11 @@ class CoverService {
         return `${TMDB_IMAGE_BASE}${data.results[0].poster_path}`
       }
 
-      console.log(`No TMDB results for "${query}" (lang: ${language || 'default'})`)
+      logger.debug('Cover', `No TMDB results for "${query}"`, { language: language || 'default' })
       return null
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      console.error(`TMDB fetch failed for "${event.title}":`, errorMessage)
+      logger.error('Cover', `TMDB fetch failed for "${event.title}"`, { error: errorMessage })
       return null
     }
   }
@@ -188,26 +224,26 @@ class CoverService {
     const count = coverUrls.length
     const layout = this.getLayout(count)
 
-    // Fetch all images in parallel with appropriate sizes
-    const fetchResults = await Promise.allSettled(
-      coverUrls.map(async (url, index) => {
-        const response = await fetch(url)
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        const arrayBuffer = await response.arrayBuffer()
+    // Fetch images with concurrency limit to avoid network/memory saturation
+    const fetchTasks = coverUrls.map((url, index) => async () => {
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const arrayBuffer = await response.arrayBuffer()
 
-        // First image is tall (2 rows) for smart layout
-        const isTallImage = layout.useSmartLayout && index === 0
-        const width = CELL_WIDTH
-        const height = isTallImage ? CELL_HEIGHT * 2 : CELL_HEIGHT
+      // First image is tall (2 rows) for smart layout
+      const isTallImage = layout.useSmartLayout && index === 0
+      const width = CELL_WIDTH
+      const height = isTallImage ? CELL_HEIGHT * 2 : CELL_HEIGHT
 
-        return {
-          buffer: await sharp(Buffer.from(arrayBuffer))
-            .resize(width, height, { fit: 'cover' })
-            .toBuffer(),
-          isTall: isTallImage,
-        }
-      })
-    )
+      return {
+        buffer: await sharp(Buffer.from(arrayBuffer))
+          .resize(width, height, { fit: 'cover' })
+          .toBuffer(),
+        isTall: isTallImage,
+      }
+    })
+
+    const fetchResults = await promiseAllWithLimit(fetchTasks, MAX_CONCURRENT_FETCHES)
 
     const images = fetchResults
       .filter((r): r is PromiseFulfilledResult<{ buffer: Buffer; isTall: boolean }> => r.status === 'fulfilled')
@@ -272,11 +308,11 @@ class CoverService {
         .jpeg({ quality: 85 })
         .toBuffer()
 
-      console.log(`Created composite image: ${images.length} covers, ${canvasWidth}x${canvasHeight}, layout: ${actualSmartLayout ? 'smart' : `${actualLayout.cols}x${actualLayout.rows}`}`)
+      logger.debug('Cover', `Created composite image: ${images.length} covers, ${canvasWidth}x${canvasHeight}`, { layout: actualSmartLayout ? 'smart' : `${actualLayout.cols}x${actualLayout.rows}` })
       return result
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      console.error('Failed to create composite image:', errorMessage)
+      logger.error('Cover', 'Failed to create composite image', { error: errorMessage })
       return null
     }
   }

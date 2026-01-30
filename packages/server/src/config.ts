@@ -1,3 +1,6 @@
+import path from 'path'
+import fs from 'fs'
+
 export interface AggregationWindows {
   movies: number
   series: number
@@ -76,4 +79,20 @@ export const config: Config = {
   jellyfinDeepLinkEnabled: getEnvBoolean('JELLYFIN_DEEP_LINK_ENABLED', false),
   // Auto-connect WhatsApp on startup (default: true)
   whatsappLoginOnStartup: getEnvBoolean('WHATSAPP_LOGIN_ON_STARTUP', true),
+}
+
+// Centralized data directory - all services should use this
+export const DATA_DIR = process.env.NODE_ENV === 'production'
+  ? '/app/data'
+  : path.join(process.cwd(), 'data')
+
+export const DB_PATH = path.join(DATA_DIR, 'queue.db')
+
+/**
+ * Ensures the data directory exists. Call this at startup.
+ */
+export function ensureDataDirectory(): void {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true })
+  }
 }

@@ -1,11 +1,6 @@
 import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'fs'
 import { logger } from '../logger/index.js'
-
-// Database path - same location as other services
-const DATA_DIR = process.env.NODE_ENV === 'production' ? '/app/data' : './data'
-const DB_PATH = path.join(DATA_DIR, 'queue.db')
+import { DB_PATH, ensureDataDirectory } from '../../config.js'
 
 // How long to keep notified media records (90 days)
 const RETENTION_DAYS = 90
@@ -18,16 +13,10 @@ class NotifiedMediaService {
   private db: Database.Database
 
   constructor() {
-    this.ensureDataDirectory()
+    ensureDataDirectory()
     this.db = new Database(DB_PATH)
     this.initializeDatabase()
     this.cleanup()
-  }
-
-  private ensureDataDirectory(): void {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true })
-    }
   }
 
   private initializeDatabase(): void {
