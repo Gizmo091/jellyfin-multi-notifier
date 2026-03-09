@@ -96,10 +96,36 @@ export function buildCoverUrl(item: JellyfinItem): string | undefined {
 }
 
 /**
+ * Fetches item metadata from the Jellyfin API.
+ * Used to work around the webhook plugin bug where SeasonNumber is always 0.
+ * See: https://github.com/jellyfin/jellyfin-plugin-webhook/issues/129
+ */
+async function fetchJellyfinItem(itemId: string): Promise<JellyfinItem | null> {
+  const apiKey = config.jellyfinApiKey
+  if (!apiKey) {
+    return null
+  }
+
+  try {
+    const baseUrl = config.jellyfinUrl.replace(/\/$/, '')
+    const response = await fetch(`${baseUrl}/Items/${itemId}?api_key=${apiKey}`)
+    if (!response.ok) {
+      logger.warn('Webhook', `Jellyfin API returned ${response.status} for item ${itemId}`)
+      return null
+    }
+    return await response.json() as JellyfinItem
+  } catch (error) {
+    logger.warn('Webhook', `Failed to fetch item from Jellyfin API: ${error}`)
+    return null
+  }
+}
+
+/**
  * Extracts a MediaEvent from a Jellyfin webhook payload.
  * Returns null if the payload is not a supported event type or lacks required data.
+ * For episodes, fetches metadata from the Jellyfin API to get reliable season/episode numbers.
  */
-export function extractMediaEvent(payload: JellyfinWebhookPayload): MediaEvent | null {
+export async function extractMediaEvent(payload: JellyfinWebhookPayload): Promise<MediaEvent | null> {
   const { NotificationType, Item } = payload
 
   // Only process ItemAdded and ItemRemoved
@@ -125,9 +151,6 @@ export function extractMediaEvent(payload: JellyfinWebhookPayload): MediaEvent |
     return null
   }
 
-  const title = formatTitle(Item)
-  const coverUrl = buildCoverUrl(Item)
-
   // Log warning for missing fields
   if (!Item.Id) {
     logger.warn('Webhook', 'Jellyfin item missing Id field')
@@ -136,20 +159,38 @@ export function extractMediaEvent(payload: JellyfinWebhookPayload): MediaEvent |
     logger.warn('Webhook', 'Jellyfin item missing Name field')
   }
 
+  // For episodes, enrich metadata from the Jellyfin API to work around
+  // the webhook plugin bug where {{SeasonNumber}} is always 0
+  let enrichedItem = Item
+  if (type === 'episode' && Item.Id) {
+    const apiItem = await fetchJellyfinItem(Item.Id)
+    if (apiItem) {
+      enrichedItem = { ...Item, ...apiItem }
+      if (Item.ParentIndexNumber !== apiItem.ParentIndexNumber) {
+        logger.debug('Webhook', `Fixed season number from webhook plugin: ${Item.ParentIndexNumber} -> ${apiItem.ParentIndexNumber}`, {
+          itemName: Item.Name,
+        })
+      }
+    }
+  }
+
+  const title = formatTitle(enrichedItem)
+  const coverUrl = buildCoverUrl(enrichedItem)
+
   // Extract episode-specific metadata for grouping
   const episodeMetadata = type === 'episode' ? {
-    seriesName: Item.SeriesName ? decodeHtmlEntities(Item.SeriesName) : undefined,
-    seasonNumber: Item.ParentIndexNumber,
-    episodeNumber: Item.IndexNumber,
+    seriesName: enrichedItem.SeriesName ? decodeHtmlEntities(enrichedItem.SeriesName) : undefined,
+    seasonNumber: enrichedItem.ParentIndexNumber,
+    episodeNumber: enrichedItem.IndexNumber,
   } : {}
 
   return {
     id: randomUUID(),
     type,
     title,
-    year: Item.ProductionYear,
+    year: enrichedItem.ProductionYear,
     coverUrl,
-    jellyfinId: Item.Id ?? 'unknown',
+    jellyfinId: enrichedItem.Id ?? 'unknown',
     eventType,
     timestamp: new Date(),
     ...episodeMetadata,

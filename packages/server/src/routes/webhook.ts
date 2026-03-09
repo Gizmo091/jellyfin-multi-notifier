@@ -144,7 +144,7 @@ export async function webhookRoutes(fastify: FastifyInstance): Promise<void> {
       logger.info('Webhook', 'Webhook received from Jellyfin', { notificationType: payload?.NotificationType })
 
       // Extract media event from payload
-      const event = extractMediaEvent(payload)
+      const event = await extractMediaEvent(payload)
 
       if (event) {
         // Store the event for later reference
