@@ -141,7 +141,7 @@ docker compose up -d
 | `PORT` | Server port (default: 3000) | No |
 | `ADMIN_PASSWORD` | Admin UI password | Yes |
 | `JELLYFIN_URL` | Jellyfin server URL | Yes |
-| `JELLYFIN_API_KEY` | Jellyfin API key for upgrade detection (skips notifications for quality upgrades) | No |
+| `JELLYFIN_API_KEY` | Jellyfin API key (used for upgrade detection and to fix season numbers — see note below) | Recommended |
 | `WEBHOOK_SECRET` | Shared secret for webhook validation | Yes |
 | `WHATSAPP_LOGIN_ON_STARTUP` | Auto-connect WhatsApp on startup (default: true) | No |
 | `WHATSAPP_PHONE_NUMBER` | Phone number for pairing code auth (international format without +). If empty, QR code is used. | No |
@@ -152,6 +152,14 @@ docker compose up -d
 | `AGGREGATION_WINDOW_SERIES_MINUTES` | Aggregation window for series added | No |
 | `AGGREGATION_WINDOW_MOVIES_REMOVED_MINUTES` | Aggregation window for movies removed | No |
 | `AGGREGATION_WINDOW_SERIES_REMOVED_MINUTES` | Aggregation window for series removed | No |
+
+### Jellyfin API Key
+
+The `JELLYFIN_API_KEY` is **strongly recommended**. It is used to:
+- **Fix season numbers**: The Jellyfin webhook plugin has a [known bug](https://github.com/jellyfin/jellyfin-plugin-webhook/issues/129) where `{{SeasonNumber}}` always resolves to 0. With the API key, the service fetches the correct season number directly from the Jellyfin API.
+- **Detect quality upgrades**: Skip duplicate notifications when media is upgraded (e.g., 720p → 1080p).
+
+To create an API key: Jellyfin Dashboard > API Keys > New.
 
 ### Jellyfin Webhook Setup
 
