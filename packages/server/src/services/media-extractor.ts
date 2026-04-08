@@ -108,7 +108,13 @@ async function fetchJellyfinItem(itemId: string): Promise<JellyfinItem | null> {
 
   try {
     const baseUrl = config.jellyfinUrl.replace(/\/$/, '')
-    const response = await fetch(`${baseUrl}/Items/${itemId}?api_key=${apiKey}`)
+    const response = await fetch(`${baseUrl}/Items/${itemId}`, {
+      method: 'GET',
+      headers: {
+        'X-MediaBrowser-Token': apiKey,
+        'Accept': 'application/json',
+      },
+    })
     if (!response.ok) {
       logger.warn('Webhook', `Jellyfin API returned ${response.status} for item ${itemId}`)
       return null
