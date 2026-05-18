@@ -66,6 +66,36 @@ function decodeHtmlEntities(text: string): string {
 }
 
 /**
+ * Coerces a value (possibly string from the webhook plugin) to a finite number.
+ * Returns undefined for empty strings, non-numeric values, or unsubstituted templates like "{{SeasonNumber}}".
+ */
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed === '' || trimmed.startsWith('{{')) return undefined
+    const n = Number(trimmed)
+    return Number.isFinite(n) ? n : undefined
+  }
+  return undefined
+}
+
+/**
+ * Normalizes numeric fields in a JellyfinItem so they are always real numbers or undefined.
+ * The Jellyfin webhook plugin substitutes template fields as strings (e.g., ParentIndexNumber: "1"),
+ * which can produce NaN downstream when parsed. The Jellyfin REST API returns real numbers,
+ * so we only need this for webhook-sourced payloads, but applying it uniformly is safe.
+ */
+function sanitizeJellyfinItem(item: JellyfinItem): JellyfinItem {
+  return {
+    ...item,
+    ProductionYear: toFiniteNumber(item.ProductionYear),
+    IndexNumber: toFiniteNumber(item.IndexNumber),
+    ParentIndexNumber: toFiniteNumber(item.ParentIndexNumber),
+  }
+}
+
+/**
  * Formats the title based on item type.
  * For episodes: "Series Name S01E02 - Episode Name"
  * For movies/series: Just the name
@@ -108,7 +138,9 @@ async function fetchJellyfinItem(itemId: string): Promise<JellyfinItem | null> {
 
   try {
     const baseUrl = config.jellyfinUrl.replace(/\/$/, '')
-    const response = await fetch(`${baseUrl}/Items/${itemId}`, {
+    // Use /Items?ids=... — the legacy /Items/{itemId} endpoint returns 400
+    // "Error processing request." on some Jellyfin versions even with a valid token.
+    const response = await fetch(`${baseUrl}/Items?ids=${encodeURIComponent(itemId)}`, {
       method: 'GET',
       headers: {
         'X-MediaBrowser-Token': apiKey,
@@ -116,10 +148,19 @@ async function fetchJellyfinItem(itemId: string): Promise<JellyfinItem | null> {
       },
     })
     if (!response.ok) {
-      logger.warn('Webhook', `Jellyfin API returned ${response.status} for item ${itemId}`)
+      const body = await response.text().catch(() => '')
+      logger.warn('Webhook', `Jellyfin API returned ${response.status} for item ${itemId}`, {
+        body: body.slice(0, 200),
+      })
       return null
     }
-    return await response.json() as JellyfinItem
+    const data = await response.json() as { Items?: JellyfinItem[] }
+    const found = data.Items?.[0]
+    if (!found) {
+      logger.warn('Webhook', `Jellyfin API returned no item for ${itemId}`)
+      return null
+    }
+    return found
   } catch (error) {
     logger.warn('Webhook', `Failed to fetch item from Jellyfin API: ${error}`)
     return null
@@ -167,11 +208,11 @@ export async function extractMediaEvent(payload: JellyfinWebhookPayload): Promis
 
   // For episodes, enrich metadata from the Jellyfin API to work around
   // the webhook plugin bug where {{SeasonNumber}} is always 0
-  let enrichedItem = Item
+  let enrichedItem = sanitizeJellyfinItem(Item)
   if (type === 'episode' && Item.Id) {
     const apiItem = await fetchJellyfinItem(Item.Id)
     if (apiItem) {
-      enrichedItem = { ...Item, ...apiItem }
+      enrichedItem = sanitizeJellyfinItem({ ...Item, ...apiItem })
       if (Item.ParentIndexNumber !== apiItem.ParentIndexNumber) {
         logger.debug('Webhook', `Fixed season number from webhook plugin: ${Item.ParentIndexNumber} -> ${apiItem.ParentIndexNumber}`, {
           itemName: Item.Name,
