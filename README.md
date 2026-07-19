@@ -124,6 +124,13 @@ docker compose up -d
 - On your phone: WhatsApp > Linked Devices > Link a Device > Link with phone number
 - Enter the pairing code immediately (codes expire quickly)
 
+> **Note on phone notifications**: This service connects as a linked device but never
+> marks itself as "online/active" (`markOnlineOnConnect: false`). This is intentional:
+> WhatsApp suppresses push notifications on your phone whenever it thinks an active
+> linked device is reading your messages. Keeping the bot "invisible" ensures your
+> personal WhatsApp message notifications keep arriving on your phone while the bot
+> still sends Jellyfin notifications normally.
+
 #### Discord Setup
 - In your Discord server: Server Settings > Integrations > Webhooks > New Webhook
 - Copy the webhook URL and paste it when adding a Discord channel

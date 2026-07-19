@@ -125,6 +125,12 @@ class WhatsAppClient extends EventEmitter {
         logger: this.logger,
         browser: ['Jellyfin Notifier', 'Chrome', '120.0.0'],
         generateHighQualityLinkPreview: false,
+        // Do NOT mark this linked device as "online/active" on connect.
+        // WhatsApp suppresses push notifications on the user's phone whenever it
+        // thinks an active linked device is reading messages. Since this bot stays
+        // permanently connected, marking it online would silence the user's personal
+        // message notifications on their phone. We only need to SEND, never to appear active.
+        markOnlineOnConnect: false,
       })
 
       // Handle connection updates
